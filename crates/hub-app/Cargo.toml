@@ -1,0 +1,11 @@
+[package]
+name = "hub-app"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "hub_app"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+hub-core = { path = "../hub-core" }
