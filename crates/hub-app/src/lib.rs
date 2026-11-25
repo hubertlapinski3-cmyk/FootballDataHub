@@ -48,6 +48,9 @@ pub struct Prefs {
     /// "system" (default), "light" or "dark".
     #[serde(default = "default_theme")]
     pub theme: String,
+    /// Per-screen override: key "home" | "matches" | "report" | "settings", value "light" | "dark" (absent = follow `theme`).
+    #[serde(default)]
+    pub screen_theme: std::collections::BTreeMap<String, String>,
 }
 
 fn default_theme() -> String {
@@ -214,10 +217,22 @@ impl App {
             ctx.request_repaint();
         }
         let scr = self.screen();
-        let force = match self.prefs.theme.as_str() {
+        let global = match self.prefs.theme.as_str() {
             "dark" => true,
             "light" => false,
             _ => ctx.system_theme() == Some(egui::Theme::Dark),
+        };
+        let key = match scr {
+            Screen::Home => "home",
+            Screen::Matches => "matches",
+            Screen::Report(_) => "report",
+            Screen::Settings => "settings",
+            _ => "",
+        };
+        let force = match self.prefs.screen_theme.get(key).map(|s| s.as_str()) {
+            Some("dark") => true,
+            Some("light") => false,
+            _ => global,
         };
         style::set_force_dark(force);
         let dark = scr.dark() || force;

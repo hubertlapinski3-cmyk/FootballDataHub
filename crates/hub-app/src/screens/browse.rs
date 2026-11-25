@@ -653,6 +653,23 @@ impl App {
                         }
                     });
                     ui.label(RichText::new("System follows the phone's dark mode. Light keeps the default look. Dark applies to every screen.").font(body(12.0)).color(sub()));
+                    ui.label(RichText::new("Per screen (overrides the choice above)").font(semi(13.0)).color(fg()));
+                    for (key, name) in [("home", "Home"), ("matches", "Matches"), ("report", "Report"), ("settings", "Settings")] {
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new(name).font(body(14.0)).color(fg()));
+                            let cur = self.prefs.screen_theme.get(key).cloned().unwrap_or_default();
+                            for (v, label) in [("", "Auto"), ("light", "Light"), ("dark", "Dark")] {
+                                if chip(ui, label, cur == v, lt()) {
+                                    if v.is_empty() {
+                                        self.prefs.screen_theme.remove(key);
+                                    } else {
+                                        self.prefs.screen_theme.insert(key.to_string(), v.to_string());
+                                    }
+                                    self.save_prefs();
+                                }
+                            }
+                        });
+                    }
                 });
                 section_title(ui, "Motion", lt());
                 card(lt()).show(ui, |ui| {
