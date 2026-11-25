@@ -125,6 +125,8 @@ pub struct App {
     pub screen_t0: f64,
     pub now: f64,
     pub show_token: bool,
+    /// last failed build: (input that was built, message). Drives the error card with Retry.
+    pub failed: Option<(String, String)>,
 }
 
 impl App {
@@ -162,6 +164,7 @@ impl App {
             screen_t0: 0.0,
             now: 0.0,
             show_token: false,
+            failed: None,
         }
     }
 
@@ -266,6 +269,7 @@ impl App {
             }
         }
         if let Some(e) = err {
+            self.failed = Some((self.input.clone(), e.to_string()));
             self.toast(&ctx, &format!("Build failed: {e}"));
         }
         let bg = if dark { style::BOARD_BG } else { style::WHITE };

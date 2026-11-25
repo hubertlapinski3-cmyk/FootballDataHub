@@ -67,7 +67,7 @@ impl App {
                 ui.label(RichText::new("Data Hub").font(head(34.0)).color(fg()));
                 ui.label(RichText::new("Paste a WhoScored match ID or URL").font(body(13.5)).color(sub()));
                 let running = self.build.lock().unwrap().running;
-                ui.add(egui::TextEdit::singleline(&mut self.input).hint_text("e.g. 1650630 or https://www.whoscored.com/Matches/…").desired_width(f32::INFINITY).min_size(Vec2::new(0.0, 46.0)).font(body(15.0)));
+                ui.add(egui::TextEdit::singleline(&mut self.input).hint_text("e.g. 1650630 or https://www.whoscored.com/Matches/…").desired_width(f32::INFINITY).min_size(Vec2::new(0.0, 48.0)).font(body(15.0)));
                 ui.horizontal(|ui| {
                     let ok = !self.input.trim().is_empty() && !running;
                     if cta(ui, "Build Match", ok) {
@@ -91,7 +91,7 @@ impl App {
                     section_title(ui, "Saved pages to import", lt());
                     for f in imports.iter().take(6) {
                         let name = f.file_name().map(|x| x.to_string_lossy().to_string()).unwrap_or_default();
-                        if ui.add(egui::Button::new(RichText::new(format!("⤓  {name}")).font(body(14.0))).min_size(Vec2::new(ui.available_width(), 44.0))).clicked() && !running {
+                        if ui.add(egui::Button::new(RichText::new(format!("⤓  {name}")).font(body(14.0))).min_size(Vec2::new(ui.available_width(), 48.0))).clicked() && !running {
                             self.open_on_done = true;
                             library::spawn_build(self.root.clone(), Source::WhoScored(f.display().to_string()), self.prefs.online(), self.prefs.relay(), self.build.clone(), ui.ctx().clone());
                         }
@@ -101,6 +101,25 @@ impl App {
                 }
                 ui.add_space(6.0);
                 self.build_status(ui, lt());
+                if let Some((inp, msg)) = self.failed.clone() {
+                    let lower = msg.to_lowercase();
+                    let offline = ["dns", "connect", "timed out", "network", "bot wall", "403", "unreachable"].iter().any(|k| lower.contains(k));
+                    card(lt()).show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        ui.label(RichText::new(if offline { "Could not reach the source (offline or blocked)" } else { "Build failed" }).font(bold(14.0)).color(if lt() { Color32::from_rgb(0xff, 0x6b, 0x81) } else { ERROR }));
+                        ui.label(RichText::new(msg.chars().take(220).collect::<String>()).font(body(12.0)).color(sub()));
+                        ui.horizontal(|ui| {
+                            if ghost(ui, "Retry", lt()) && !running && !inp.trim().is_empty() {
+                                self.failed = None;
+                                self.open_on_done = true;
+                                library::spawn_build(self.root.clone(), Source::WhoScored(inp.trim().to_string()), self.prefs.online(), self.prefs.relay(), self.build.clone(), ui.ctx().clone());
+                            }
+                            if ghost(ui, "Dismiss", lt()) {
+                                self.failed = None;
+                            }
+                        });
+                    });
+                }
                 section_title(ui, "Latest built matches", lt());
                 if self.lib.entries.is_empty() {
                     ui.label(RichText::new("No matches yet. Build one above or try the sample.").color(sub()));
@@ -623,12 +642,12 @@ impl App {
                     ui.set_width(ui.available_width());
                     ui.label(RichText::new("WhoScored blocks plain requests, so links are scraped by a headless browser in your repository's scrape-whoscored workflow (built on ricardoherediaj/football-analytics-tutorials). The app reads finished matches from the repo and, with a token, starts the run itself.").font(body(12.5)).color(sub()));
                     ui.label(RichText::new("Repository (owner/name)").font(semi(13.0)));
-                    if ui.add(egui::TextEdit::singleline(&mut self.prefs.relay_repo).desired_width(f32::INFINITY).min_size(Vec2::new(0.0, 44.0))).lost_focus() {
+                    if ui.add(egui::TextEdit::singleline(&mut self.prefs.relay_repo).desired_width(f32::INFINITY).min_size(Vec2::new(0.0, 48.0))).lost_focus() {
                         self.save_prefs();
                     }
                     ui.label(RichText::new("Token (fine-grained: Actions read/write + Contents read on that repo only)").font(semi(13.0)));
                     ui.horizontal(|ui| {
-                        let r = ui.add(egui::TextEdit::singleline(&mut self.prefs.relay_token).password(!self.show_token).desired_width(ui.available_width() - 70.0).min_size(Vec2::new(0.0, 44.0)));
+                        let r = ui.add(egui::TextEdit::singleline(&mut self.prefs.relay_token).password(!self.show_token).desired_width(ui.available_width() - 70.0).min_size(Vec2::new(0.0, 48.0)));
                         if r.lost_focus() {
                             self.save_prefs();
                         }
@@ -690,7 +709,7 @@ impl App {
                         let _ = std::fs::remove_dir_all(&cache);
                         self.toast(ui.ctx(), "Source cache cleared");
                     }
-                    if ui.add(egui::Button::new(RichText::new("Delete all matches").color(WHITE)).fill(ERROR).corner_radius(22).min_size(Vec2::new(0.0, 44.0))).clicked() {
+                    if ui.add(egui::Button::new(RichText::new("Delete all matches").color(WHITE)).fill(ERROR).corner_radius(22).min_size(Vec2::new(0.0, 48.0))).clicked() {
                         let _ = std::fs::remove_dir_all(&mdir);
                         self.lib.reload();
                         self.raster.clear();

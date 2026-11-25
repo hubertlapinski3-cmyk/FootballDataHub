@@ -8,7 +8,7 @@ use egui::{Align, Color32, Layout, Rect, RichText, ScrollArea, Sense, Stroke, Ui
 
 /// Height available to the board canvas for a window of the given height.
 fn canvas_h_hint(window_h: f32) -> f32 {
-    (window_h - 132.0 - 112.0).max(100.0)
+    (window_h - 140.0 - 112.0).max(100.0)
 }
 
 impl App {
@@ -24,16 +24,16 @@ impl App {
         };
         let full = ui.max_rect();
         // ---- chrome top
-        let mut top = ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_size(full.min, Vec2::new(full.width(), 132.0))));
+        let mut top = ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_size(full.min, Vec2::new(full.width(), 140.0))));
         egui::Frame::new().inner_margin(egui::Margin::symmetric(10, 2)).show(&mut top, |ui| {
             ui.horizontal(|ui| {
-                if ui.add(egui::Button::new(RichText::new("←").font(bold(22.0)).color(WHITE)).fill(Color32::TRANSPARENT).min_size(Vec2::splat(44.0))).clicked() {
+                if ui.add(egui::Button::new(RichText::new("←").font(bold(22.0)).color(WHITE)).fill(Color32::TRANSPARENT).min_size(Vec2::splat(48.0))).clicked() {
                     self.back();
                 }
                 ui.label(RichText::new(&meta.title).font(head(22.0)).color(WHITE));
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     let fill_zoom = (canvas_h_hint(full.height()) / (full.width() * (meta.height / meta.width) as f32)).clamp(1.0, 3.0);
-                    if (meta.height / meta.width) < 1.1 && ui.add(egui::Button::new(RichText::new(if self.viewer.zoom > 1.01 { "Fit" } else { "Fill" }).font(semi(14.0)).color(PRIMARY_ON_DARK)).fill(Color32::TRANSPARENT).min_size(Vec2::splat(44.0))).clicked() {
+                    if (meta.height / meta.width) < 1.1 && ui.add(egui::Button::new(RichText::new(if self.viewer.zoom > 1.01 { "Fit" } else { "Fill" }).font(semi(14.0)).color(PRIMARY_ON_DARK)).fill(Color32::TRANSPARENT).min_size(Vec2::splat(48.0))).clicked() {
                         if self.viewer.zoom > 1.01 {
                             self.viewer.zoom = 1.0;
                         } else {
@@ -41,10 +41,10 @@ impl App {
                         }
                         self.viewer.pan = Vec2::ZERO;
                     }
-                    if ui.add(egui::Button::new(RichText::new("Info").font(semi(14.0)).color(PRIMARY_ON_DARK)).fill(Color32::TRANSPARENT).min_size(Vec2::splat(44.0))).on_hover_text("Provenance").clicked() {
+                    if ui.add(egui::Button::new(RichText::new("Info").font(semi(14.0)).color(PRIMARY_ON_DARK)).fill(Color32::TRANSPARENT).min_size(Vec2::splat(48.0))).on_hover_text("Provenance").clicked() {
                         self.viewer.show_manifest = !self.viewer.show_manifest;
                     }
-                    if ui.add(egui::Button::new(RichText::new("Export").font(semi(14.0)).color(PRIMARY_ON_DARK)).fill(Color32::TRANSPARENT).min_size(Vec2::splat(44.0))).on_hover_text("Export PNG").clicked() {
+                    if ui.add(egui::Button::new(RichText::new("Export").font(semi(14.0)).color(PRIMARY_ON_DARK)).fill(Color32::TRANSPARENT).min_size(Vec2::splat(48.0))).on_hover_text("Export PNG").clicked() {
                         self.export_board(ui.ctx(), m, board);
                     }
                 });
@@ -84,7 +84,7 @@ impl App {
             }
         });
         // ---- board canvas
-        let canvas = Rect::from_min_max(egui::pos2(full.left(), full.top() + 132.0), egui::pos2(full.right(), full.bottom() - 112.0));
+        let canvas = Rect::from_min_max(egui::pos2(full.left(), full.top() + 140.0), egui::pos2(full.right(), full.bottom() - 112.0));
         let resp = ui.interact(canvas, ui.scope_id().with("canvas"), Sense::click_and_drag());
         let aspect = (meta.height / meta.width) as f32;
         // portrait boards fit the width and scroll; landscape boards fit whole

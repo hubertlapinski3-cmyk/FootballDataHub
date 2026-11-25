@@ -102,7 +102,7 @@ pub fn apply_visuals(ctx: &egui::Context, dark: bool) {
     ctx.set_theme(if dark { egui::Theme::Dark } else { egui::Theme::Light });
     ctx.set_visuals(v);
     ctx.all_styles_mut(|s| {
-        s.spacing.interact_size.y = 44.0; // touch targets
+        s.spacing.interact_size.y = 48.0; // Android minimum touch target (48dp)
         s.spacing.button_padding = Vec2::new(16.0, 10.0);
         s.spacing.item_spacing = Vec2::new(10.0, 10.0);
         s.text_styles.insert(egui::TextStyle::Body, body(15.0));
@@ -147,7 +147,7 @@ pub fn cta(ui: &mut Ui, label: &str, enabled: bool) -> bool {
 
 pub fn ghost(ui: &mut Ui, label: &str, dark: bool) -> bool {
     let c = if dark { PRIMARY_ON_DARK } else { PRIMARY };
-    let btn = egui::Button::new(RichText::new(label).font(semi(14.0)).color(c)).fill(Color32::TRANSPARENT).stroke(Stroke::new(1.5, c)).corner_radius(CornerRadius::same(22)).min_size(Vec2::new(0.0, 44.0));
+    let btn = egui::Button::new(RichText::new(label).font(semi(14.0)).color(c)).fill(Color32::TRANSPARENT).stroke(Stroke::new(1.5, c)).corner_radius(CornerRadius::same(24)).min_size(Vec2::new(0.0, 48.0));
     ui.add(btn).clicked()
 }
 
@@ -160,7 +160,7 @@ pub fn chip(ui: &mut Ui, label: &str, active: bool, dark: bool) -> bool {
     } else {
         (Color32::from_rgb(0xF1, 0xEC, 0xFB), PRIMARY_VARIANT, Stroke::NONE)
     };
-    let btn = egui::Button::new(RichText::new(label).font(semi(12.5)).color(text)).fill(fill).stroke(stroke).corner_radius(CornerRadius::same(18)).min_size(Vec2::new(0.0, 36.0));
+    let btn = egui::Button::new(RichText::new(label).font(semi(12.5)).color(text)).fill(fill).stroke(stroke).corner_radius(CornerRadius::same(18)).min_size(Vec2::new(0.0, 48.0));
     ui.add(btn).clicked()
 }
 
@@ -196,7 +196,7 @@ pub fn top_bar(ui: &mut Ui, title: &str, dark: bool) -> bool {
     ui.horizontal(|ui| {
         ui.set_min_height(52.0);
         let c = if dark { WHITE } else { BLACK };
-        let r = ui.add(egui::Button::new(RichText::new("←").font(bold(22.0)).color(c)).fill(Color32::TRANSPARENT).min_size(Vec2::splat(44.0)));
+        let r = ui.add(egui::Button::new(RichText::new("←").font(bold(22.0)).color(c)).fill(Color32::TRANSPARENT).min_size(Vec2::splat(48.0)));
         if r.clicked() {
             back = true;
         }
