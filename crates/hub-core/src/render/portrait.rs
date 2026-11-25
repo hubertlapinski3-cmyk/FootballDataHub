@@ -10,7 +10,9 @@ use super::svg::{text_w, LegendHit, Prim, Scene};
 
 const PW: f32 = 640.0;
 const PAD: f32 = 20.0;
-const TEXT_BOOST: f32 = 1.25;
+const TEXT_BOOST: f32 = 1.3;
+/// Smallest type on a portrait board, in board px (about 11 dp on a phone).
+const MIN_TEXT: f32 = 14.0;
 const PANEL_FILL: &str = "#0f0c15";
 const GAP: f32 = 22.0;
 
@@ -115,7 +117,7 @@ fn xf(p: &Prim, ox: f32, oy: f32, sx: f32, sy: f32, tx: f32, ty: f32) -> Prim {
 
 fn boost(mut p: Prim, k: f32) -> Prim {
     if let Prim::T { sz, .. } = &mut p {
-        *sz *= k;
+        *sz = (*sz * k).max(MIN_TEXT);
     }
     p
 }
@@ -164,6 +166,32 @@ fn cut(items: &[(usize, Box4)], rows: bool, stuck: u8) -> Node {
     if groups.len() > 1 {
         let kids: Vec<Node> = groups.iter().map(|g| cut(g, !rows, 0)).collect();
         return if rows { Node::Rows(kids) } else { Node::Cols(kids) };
+    }
+    // one glued block: wide spanners (a legend under two pitches) may be what joins the columns
+    if !rows && items.len() > 3 {
+        let total = items.iter().map(|x| x.1).reduce(union).map(|b| b.2 - b.0).unwrap_or(0.0);
+        let (span, rest): (Vec<_>, Vec<_>) = items.iter().cloned().partition(|x| (x.1 .2 - x.1 .0) > 0.55 * total);
+        if !span.is_empty() && !rest.is_empty() {
+            let mut gs: Vec<(f32, f32)> = vec![];
+            let mut r2 = rest.clone();
+            r2.sort_by(|a, b| a.1 .0.partial_cmp(&b.1 .0).unwrap());
+            let mut end = f32::MIN;
+            for it in &r2 {
+                if gs.is_empty() || it.1 .0 > end + min_gap {
+                    gs.push((it.1 .0, it.1 .2));
+                } else if let Some(l) = gs.last_mut() {
+                    l.1 = l.1.max(it.1 .2);
+                }
+                end = end.max(it.1 .2);
+            }
+            if gs.len() > 1 {
+                let span_top = span.iter().map(|x| x.1 .1).fold(f32::MAX, f32::min);
+                let rest_top = rest.iter().map(|x| x.1 .1).fold(f32::MAX, f32::min);
+                let a = cut(&rest, false, 0);
+                let b = cut(&span, true, 1);
+                return if span_top < rest_top { Node::Rows(vec![b, a]) } else { Node::Rows(vec![a, b]) };
+            }
+        }
     }
     if stuck >= 1 || items.len() <= 1 {
         let b = items.iter().map(|x| x.1).reduce(union).unwrap_or((0.0, 0.0, 1.0, 1.0));
@@ -365,13 +393,16 @@ pub fn reflow(sc: &Scene) -> Option<Scene> {
     let rb = bbox(&head_right);
     let cx = rb.map(|b| (b.0 + b.2) / 2.0).unwrap_or(1305.0);
     for p in &head_right {
+        if matches!(p, Prim::T { runs, .. } if runs.iter().any(|r| r.0 == "FULL MATCH")) {
+            continue; // the period selector already says it
+        }
         let q = xf(p, 0.0, 0.0, 1.0, 1.0, PW / 2.0 - cx, row_y - 52.0);
         prims.push(match q {
             Prim::T { sz, .. } if sz < 12.0 => boost(q, 1.2),
             other => other,
         });
     }
-    let head_h = row_y + 66.0;
+    let head_h = row_y + 44.0;
     for p in &head_frame {
         if let Prim::R { x, h, f, s, sw, o, t, l, r, .. } = p {
             if *h > 30.0 {

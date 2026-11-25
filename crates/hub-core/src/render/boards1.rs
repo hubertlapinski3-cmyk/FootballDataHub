@@ -319,7 +319,8 @@ pub fn corridors(c: &Ctx) -> Board {
         let t = c.a.t(*sd);
         let col = c.col(*sd).to_string();
         let bx = 40.0 + k as f64 * 780.0;
-        s.t(bx + 370.0, 205.0, &format!("{}  ·  Z14: {}  ·  Half-spaces: {} (L {} / R {})  ·  Cutbacks: {}  ·  Through-balls: {}", c.name(*sd), t.z14.len(), t.hs_left.len() + t.hs_right.len(), t.hs_left.len(), t.hs_right.len(), t.cutbacks.len(), t.through_balls.len()), 14.0, 800, &col, Anchor::Middle);
+        s.t(bx + 370.0, 190.0, &format!("{}  ·  Zone 14: {}  ·  Half-spaces: {}", c.name(*sd), t.z14.len(), t.hs_left.len() + t.hs_right.len()), 14.0, 800, &col, Anchor::Middle);
+        s.t(bx + 370.0, 212.0, &format!("L {} / R {}  ·  Cutbacks: {}  ·  Through-balls: {}", t.hs_left.len(), t.hs_right.len(), t.cutbacks.len(), t.through_balls.len()), 12.5, 600, &col, Anchor::Middle);
         let p = Pitch::up(bx, 240.0, 740.0, 700.0, 45.0);
         p.zone(&mut s, 70.0, 88.5, 24.85, 43.15, "#ffffff", 0.08);
         p.zone(&mut s, 60.0, 88.5, 43.15, 54.16, &sem.hs_left, 0.10);
@@ -330,10 +331,14 @@ pub fn corridors(c: &Ctx) -> Board {
         let draw = |s: &mut Svg, idx: &[usize], colr: &str, w: f64| {
             for &q in idx {
                 let e = &ev[q];
-                let (a1, b1) = p.p(e.x, e.y);
-                let (a2, b2) = p.p(e.end().0, e.end().1);
+                // clip to the visible pitch so no line leaves it
+                let Some(((x1, y1), (x2, y2), end_in)) = clip_seg((e.x, e.y), e.end(), p.lmin, 105.0, 0.0, 68.0) else { continue };
+                let (a1, b1) = p.p(x1, y1);
+                let (a2, b2) = p.p(x2, y2);
                 s.line(a1, b1, a2, b2, colr, w, r#"opacity="0.85""#);
-                s.circle(a2, b2, 3.0, colr, "none", 0.0, "");
+                if end_in {
+                    s.circle(a2, b2, 3.0, colr, "none", 0.0, "");
+                }
             }
         };
         draw(&mut s, &t.hs_left, &sem.hs_left, 1.6);
@@ -348,10 +353,12 @@ pub fn corridors(c: &Ctx) -> Board {
         }
     }
     let mut lx = 200.0;
-    let y = 1010.0;
-    lx = legend_item(&mut s, lx, y, "circle", &sem.z14, "Zone 14 pass (central edge)");
-    lx = legend_item(&mut s, lx, y, "circle", &sem.hs_right, "Right half-space pass");
-    lx = legend_item(&mut s, lx, y, "circle", &sem.hs_left, "Left half-space pass");
+    let y = 990.0;
+    lx = legend_item(&mut s, lx, y, "circle", &sem.z14, "Zone 14 pass");
+    lx = legend_item(&mut s, lx, y, "circle", &sem.hs_right, "Right half-space");
+    legend_item(&mut s, lx, y, "circle", &sem.hs_left, "Left half-space");
+    let mut lx = 200.0;
+    let y = 1024.0;
     lx = legend_item(&mut s, lx, y, "diamond", &sem.cutback, "Cutback (inside box)");
     legend_item(&mut s, lx, y, "diamond", &sem.through, "Through-ball attempt");
     let _ = col_unused();
@@ -359,6 +366,35 @@ pub fn corridors(c: &Ctx) -> Board {
     Board::new("05_creation_corridors", "Creation corridors", s)
 }
 fn col_unused() {}
+
+/// Liang-Barsky clip of a segment to a rectangle (pitch metres). Returns the clipped ends and whether
+/// the original end point lies inside the rectangle.
+pub fn clip_seg(a: (f64, f64), b: (f64, f64), x0: f64, x1: f64, y0: f64, y1: f64) -> Option<((f64, f64), (f64, f64), bool)> {
+    let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+    let (mut t0, mut t1) = (0.0f64, 1.0f64);
+    for (p, q) in [(-dx, a.0 - x0), (dx, x1 - a.0), (-dy, a.1 - y0), (dy, y1 - a.1)] {
+        if p == 0.0 {
+            if q < 0.0 {
+                return None;
+            }
+        } else {
+            let r = q / p;
+            if p < 0.0 {
+                if r > t1 {
+                    return None;
+                }
+                t0 = t0.max(r);
+            } else {
+                if r < t0 {
+                    return None;
+                }
+                t1 = t1.min(r);
+            }
+        }
+    }
+    let end_in = b.0 >= x0 && b.0 <= x1 && b.1 >= y0 && b.1 <= y1;
+    Some(((a.0 + t0 * dx, a.1 + t0 * dy), (a.0 + t1 * dx, a.1 + t1 * dy), end_in))
+}
 
 // ---------------------------------------------------------------- 6 shot anatomy
 pub fn shot_anatomy(c: &Ctx) -> Board {
