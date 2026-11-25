@@ -1,0 +1,49 @@
+name: scrape-whoscored
+# Headless-browser relay for WhoScored (bot-walled for plain HTTP).
+# Triggered from the Data Hub app (Settings > Scrape relay) or by hand:
+# Actions > scrape-whoscored > Run workflow > paste the match URL.
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: WhoScored match URL or numeric match id
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: scrape-whoscored
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install scraper (ricardoherediaj/football-analytics-tutorials, pinned)
+        run: |
+          pip install "football-match-report[scrape] @ git+https://github.com/ricardoherediaj/football-analytics-tutorials@7ae865374d25eecbe46fe5331eed7bbdcaa16368"
+          python -m playwright install --with-deps chromium
+      - name: Scrape match
+        id: scrape
+        env:
+          MATCH_URL: ${{ inputs.url }}
+        run: |
+          id=$(python scripts/scrape_whoscored.py "$MATCH_URL" data/whoscored)
+          echo "match_id=$id" >> "$GITHUB_OUTPUT"
+      - name: Commit match data
+        env:
+          MATCH_ID: ${{ steps.scrape.outputs.match_id }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/whoscored
+          if git diff --cached --quiet; then echo "no change"; exit 0; fi
+          git commit -m "data: WhoScored match $MATCH_ID"
+          for i in 1 2 3; do git pull --rebase && git push && exit 0; sleep 5; done
+          exit 1
