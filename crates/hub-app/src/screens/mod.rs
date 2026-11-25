@@ -55,12 +55,22 @@ impl App {
     pub fn draw_board(&mut self, ui: &mut Ui, m: usize, board: &str, width: f32, thumb: bool, animate: bool) -> egui::Response {
         let sc = self.scenes.get(&self.scene_path(m, board));
         let aspect = sc.as_ref().map(|s| s.h / s.w).unwrap_or(1130.0 / 1600.0);
-        let (rect, resp) = ui.allocate_exact_size(Vec2::new(width, width * aspect), Sense::click());
+        // tall portrait boards are cropped to a tile in thumbnails; the viewer shows them whole
+        let tile_h = if thumb && aspect > 1.1 { width * 0.95 } else { width * aspect };
+        let (rect, resp) = ui.allocate_exact_size(Vec2::new(width, tile_h), Sense::click());
         match sc {
             Some(sc) => {
                 let crests = self.crest_ids(ui.ctx(), m);
                 let anim = if animate && !self.prefs.reduced_motion { Some((self.now - self.screen_t0) as f32) } else { None };
-                crate::scene::paint(ui, rect, &sc, &crate::scene::PaintOpts { anim, hidden: None, selected: None, thumb, crests });
+                let mut tile = ui.new_child(egui::UiBuilder::new().max_rect(rect));
+                tile.set_clip_rect(rect.intersect(ui.clip_rect()));
+                // portrait boards: crop to the pitch, skipping the header block
+                let full = if thumb && aspect > 1.1 {
+                    egui::Rect::from_min_size(egui::pos2(rect.min.x, rect.min.y - width * 0.5), Vec2::new(width, width * aspect))
+                } else {
+                    egui::Rect::from_min_size(rect.min, Vec2::new(width, width * aspect))
+                };
+                crate::scene::paint(&tile, full, &sc, &crate::scene::PaintOpts { anim, hidden: None, selected: None, thumb, crests });
             }
             None => {
                 ui.painter().rect_filled(rect, 10.0, Color32::from_rgb(0x18, 0x13, 0x22));

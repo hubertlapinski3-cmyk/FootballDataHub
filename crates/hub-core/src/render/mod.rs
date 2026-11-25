@@ -3,6 +3,7 @@ pub mod boards2;
 pub mod boards3;
 pub mod frame;
 pub mod pitch;
+pub mod portrait;
 pub mod svg;
 
 use crate::model::Side;
@@ -30,9 +31,14 @@ pub struct Board {
 
 impl Board {
     pub fn new(id: &str, title: &str, s: svg::Svg) -> Board {
-        let (w, h) = (s.w, s.h);
         let how = s.how.clone();
-        let scene = serde_json::to_string(&s.scene).unwrap_or_default();
+        // phone layout: pitch-and-panel boards are recomposed into one portrait column
+        let portrait = portrait::reflow(&s.scene);
+        let (w, h) = match &portrait {
+            Some(p) => (p.w as f64, p.h as f64),
+            None => (s.w, s.h),
+        };
+        let scene = serde_json::to_string(portrait.as_ref().unwrap_or(&s.scene)).unwrap_or_default();
         Board { id: id.to_string(), title: title.to_string(), section: section_of(id).into(), how, width: w, height: h, svg: s.finish(crate::theme::BG), scene }
     }
 }

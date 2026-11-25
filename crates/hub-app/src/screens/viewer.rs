@@ -33,7 +33,7 @@ impl App {
                 ui.label(RichText::new(&meta.title).font(head(22.0)).color(WHITE));
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     let fill_zoom = (canvas_h_hint(full.height()) / (full.width() * (meta.height / meta.width) as f32)).clamp(1.0, 3.0);
-                    if ui.add(egui::Button::new(RichText::new(if self.viewer.zoom > 1.01 { "Fit" } else { "Fill" }).font(semi(14.0)).color(PRIMARY_ON_DARK)).fill(Color32::TRANSPARENT).min_size(Vec2::splat(44.0))).clicked() {
+                    if (meta.height / meta.width) < 1.1 && ui.add(egui::Button::new(RichText::new(if self.viewer.zoom > 1.01 { "Fit" } else { "Fill" }).font(semi(14.0)).color(PRIMARY_ON_DARK)).fill(Color32::TRANSPARENT).min_size(Vec2::splat(44.0))).clicked() {
                         if self.viewer.zoom > 1.01 {
                             self.viewer.zoom = 1.0;
                         } else {
@@ -66,6 +66,9 @@ impl App {
                             self.viewer.hidden.clear();
                             self.viewer.selected = None;
                             self.viewer.opened_at = now;
+                            self.viewer.zoom = 1.0;
+                            self.viewer.pan = Vec2::ZERO;
+                            self.viewer.at_top = true;
                         }
                     }
                 });
@@ -84,7 +87,8 @@ impl App {
         let canvas = Rect::from_min_max(egui::pos2(full.left(), full.top() + 132.0), egui::pos2(full.right(), full.bottom() - 112.0));
         let resp = ui.interact(canvas, ui.scope_id().with("canvas"), Sense::click_and_drag());
         let aspect = (meta.height / meta.width) as f32;
-        let fit_w = canvas.width().min(canvas.height() / aspect);
+        // portrait boards fit the width and scroll; landscape boards fit whole
+        let fit_w = if aspect > 1.1 { canvas.width() } else { canvas.width().min(canvas.height() / aspect) };
         // pinch / ctrl-scroll zoom, drag to pan, double tap to fit
         let (zoom_delta, multi) = ui.input(|i| (i.zoom_delta(), i.multi_touch()));
         if resp.hovered() || multi.is_some() {
@@ -112,6 +116,10 @@ impl App {
         let size = Vec2::new(fit_w, fit_w * aspect) * self.viewer.zoom;
         // keep the board on screen
         let max_pan = ((size - canvas.size()) / 2.0).max(Vec2::ZERO);
+        if self.viewer.at_top {
+            self.viewer.pan = Vec2::new(0.0, max_pan.y);
+            self.viewer.at_top = false;
+        }
         self.viewer.pan = self.viewer.pan.clamp(-max_pan, max_pan);
         let mut centre = canvas.center() + self.viewer.pan;
         if size.y < canvas.height() {

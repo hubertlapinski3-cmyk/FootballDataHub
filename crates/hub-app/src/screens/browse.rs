@@ -267,11 +267,11 @@ impl App {
                     for row in items.chunks(2) {
                         let a = self.stagger(tile_i);
                         tile_i += 2;
-                        ui.horizontal(|ui| {
+                        ui.horizontal_top(|ui| {
                             ui.set_opacity(a);
                             ui.add_space((1.0 - a) * 0.0);
                             for (id, title) in row {
-                                let r = ui.allocate_ui(Vec2::new(tw, tw * 1130.0 / 1600.0 + 40.0), |ui| {
+                                let r = ui.allocate_ui(Vec2::new(tw, 10.0), |ui| {
                                     ui.vertical(|ui| {
                                         let th = tw * 1130.0 / 1600.0;
                                         if id == "__players" {

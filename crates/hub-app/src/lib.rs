@@ -82,11 +82,13 @@ pub struct ViewerState {
     pub hidden: std::collections::HashSet<i32>,
     pub selected: Option<(usize, i32)>,
     pub opened_at: f64,
+    /// start a freshly opened tall board at its top edge
+    pub at_top: bool,
 }
 
 impl ViewerState {
     pub fn fresh(now: f64) -> ViewerState {
-        ViewerState { zoom: 1.0, pan: egui::Vec2::ZERO, show_manifest: false, hidden: Default::default(), selected: None, opened_at: now }
+        ViewerState { zoom: 1.0, pan: egui::Vec2::ZERO, show_manifest: false, hidden: Default::default(), selected: None, opened_at: now, at_top: true }
     }
 }
 
