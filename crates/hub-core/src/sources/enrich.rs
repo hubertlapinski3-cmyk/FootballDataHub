@@ -50,7 +50,10 @@ fn get_cached(cache: &Path, key: &str, url: &str) -> Result<Value> {
     if p.exists() {
         return Ok(serde_json::from_str(&std::fs::read_to_string(&p)?)?);
     }
-    let txt = crate::net::get_text(url, &[("Accept", "application/json")], 20)?;
+    // FotMob's api/data endpoints expect a site Referer (same approach as
+    // ricardoherediaj/football-analytics-tutorials, Apache-2.0).
+    let referer = if url.contains("fotmob.com") { "https://www.fotmob.com/" } else { "https://www.sofascore.com/" };
+    let txt = crate::net::get_text(url, &[("Accept", "application/json"), ("Referer", referer)], 20)?;
     let v: Value = serde_json::from_str(&txt)?;
     std::fs::create_dir_all(p.parent().unwrap())?;
     std::fs::write(&p, txt)?;
@@ -152,6 +155,17 @@ fn fotmob(m: &mut Match, cache: &Path) -> Result<()> {
         }
     }
     let home_id = md["general"]["homeTeam"]["id"].as_u64();
+    // Fallback: colours carried on each shot when general.teamColors is missing.
+    if tc.is_null() {
+        for shot in md["content"]["shotmap"]["shots"].as_array().cloned().unwrap_or_default() {
+            if let Some(c) = shot["teamColor"].as_str() {
+                let i = if shot["teamId"].as_u64() == home_id { 0 } else { 1 };
+                if !m.teams[i].colour_hints.iter().any(|h| h.0 == "fotmob:shot") {
+                    m.teams[i].colour_hints.insert(0, ("fotmob:shot".into(), c.to_string()));
+                }
+            }
+        }
+    }
     let shots: Vec<(Side, f64, String, Option<f64>, Option<f64>)> = md["content"]["shotmap"]["shots"]
         .as_array()
         .map(|a| {
