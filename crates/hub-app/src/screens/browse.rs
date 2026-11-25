@@ -109,7 +109,7 @@ impl App {
                 ScrollArea::horizontal().id_salt("latest").show(ui, |ui| {
                     ui.horizontal(|ui| {
                         for i in 0..self.lib.entries.len().min(8) {
-                            if self.match_card(ui, i, 280.0) {
+                            if self.match_card(ui, i, if self.lib.entries.len() == 1 { ui.available_width() - 34.0 } else { 280.0 }) {
                                 open = Some(i);
                             }
                         }
@@ -232,19 +232,20 @@ impl App {
                     let f = |v: Option<f64>| v.map(|x| format!("{x:.1}")).unwrap_or("–".into());
                     metric_chip(ui, "PPDA", &format!("{}–{}", f(e.s.ppda[0]), f(e.s.ppda[1])), true);
                 });
-                ui.horizontal(|ui| {
-                    if chip(ui, "Read the report", false, true) {
-                        self.push(Screen::Report(m));
+                ui.add_space(6.0);
+                if let Some(i) = tab_row(ui, &["Boards", "Report", "Players", "Compare"], 0) {
+                    match i {
+                        1 => self.push(Screen::Report(m)),
+                        2 => self.push(Screen::Players(m)),
+                        3 => {
+                            self.compare.left = Some((m, 0));
+                            self.compare.right = Some((m, 1));
+                            self.push(Screen::Compare);
+                        }
+                        _ => {}
                     }
-                    if chip(ui, "Players", false, true) {
-                        self.push(Screen::Players(m));
-                    }
-                    if chip(ui, "Compare", false, true) {
-                        self.compare.left = Some((m, 0));
-                        self.compare.right = Some((m, 1));
-                        self.push(Screen::Compare);
-                    }
-                });
+                }
+                ui.add_space(6.0);
                 if !e.s.fallbacks.is_empty() {
                     ui.label(RichText::new(format!("Note: {} source fallback(s): {}", e.s.fallbacks.len(), e.s.fallbacks[0])).font(body(12.0)).color(DARK_TEXT2));
                 }
@@ -275,7 +276,7 @@ impl App {
                                         let th = tw * 1130.0 / 1600.0;
                                         if id == "__players" {
                                             let (r, _) = ui.allocate_exact_size(Vec2::new(tw, th), Sense::hover());
-                                            ui.painter().rect_filled(r, 10.0, DARK_CARD);
+                                            ui.painter().rect_filled(r, 14.0, PRIMARY);
                                             ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, format!("{} players →", e.s.players.len()), head(22.0), WHITE);
                                         } else {
                                             let _ = th;

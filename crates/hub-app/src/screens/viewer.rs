@@ -6,6 +6,11 @@ use crate::style::*;
 use crate::{App, Screen};
 use egui::{Align, Color32, Layout, Rect, RichText, ScrollArea, Sense, Stroke, Ui, Vec2};
 
+/// Height available to the board canvas for a window of the given height.
+fn canvas_h_hint(window_h: f32) -> f32 {
+    (window_h - 132.0 - 112.0).max(100.0)
+}
+
 impl App {
     pub fn board_viewer(&mut self, ui: &mut Ui, m: usize, board: &str) {
         if m >= self.lib.entries.len() {
@@ -27,6 +32,15 @@ impl App {
                 }
                 ui.label(RichText::new(&meta.title).font(head(22.0)).color(WHITE));
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    let fill_zoom = (canvas_h_hint(full.height()) / (full.width() * (meta.height / meta.width) as f32)).clamp(1.0, 3.0);
+                    if ui.add(egui::Button::new(RichText::new(if self.viewer.zoom > 1.01 { "Fit" } else { "Fill" }).font(semi(14.0)).color(PRIMARY_ON_DARK)).fill(Color32::TRANSPARENT).min_size(Vec2::splat(44.0))).clicked() {
+                        if self.viewer.zoom > 1.01 {
+                            self.viewer.zoom = 1.0;
+                        } else {
+                            self.viewer.zoom = fill_zoom;
+                        }
+                        self.viewer.pan = Vec2::ZERO;
+                    }
                     if ui.add(egui::Button::new(RichText::new("Info").font(semi(14.0)).color(PRIMARY_ON_DARK)).fill(Color32::TRANSPARENT).min_size(Vec2::splat(44.0))).on_hover_text("Provenance").clicked() {
                         self.viewer.show_manifest = !self.viewer.show_manifest;
                     }
@@ -67,7 +81,7 @@ impl App {
             }
         });
         // ---- board canvas
-        let canvas = Rect::from_min_max(egui::pos2(full.left(), full.top() + 132.0), egui::pos2(full.right(), full.bottom() - 70.0));
+        let canvas = Rect::from_min_max(egui::pos2(full.left(), full.top() + 132.0), egui::pos2(full.right(), full.bottom() - 112.0));
         let resp = ui.interact(canvas, ui.scope_id().with("canvas"), Sense::click_and_drag());
         let aspect = (meta.height / meta.width) as f32;
         let fit_w = canvas.width().min(canvas.height() / aspect);
@@ -99,7 +113,12 @@ impl App {
         // keep the board on screen
         let max_pan = ((size - canvas.size()) / 2.0).max(Vec2::ZERO);
         self.viewer.pan = self.viewer.pan.clamp(-max_pan, max_pan);
-        let rect = Rect::from_center_size(canvas.center() + self.viewer.pan, size);
+        let mut centre = canvas.center() + self.viewer.pan;
+        if size.y < canvas.height() {
+            // short board on a tall phone: sit just under the chrome instead of floating mid-screen
+            centre.y = canvas.top() + size.y / 2.0 + 6.0;
+        }
+        let rect = Rect::from_center_size(centre, size);
         // native vector board: crisp at any zoom, tappable marks and legend
         let sc = self.scenes.get(&self.scene_path(m, board));
         let crests = self.crest_ids(ui.ctx(), m);
@@ -149,8 +168,12 @@ impl App {
             }
         }
         // ---- how-to-read footer (always visible)
-        let foot = Rect::from_min_max(egui::pos2(full.left(), full.bottom() - 70.0), full.max);
-        let mut fu = ui.new_child(egui::UiBuilder::new().max_rect(foot.shrink2(Vec2::new(12.0, 6.0))));
+        let mut foot = Rect::from_min_max(egui::pos2(full.left(), full.bottom() - 112.0), full.max);
+        if rect.height() < canvas.height() - 130.0 {
+            foot = Rect::from_min_size(egui::pos2(full.left(), rect.bottom() + 8.0), Vec2::new(full.width(), 112.0));
+        }
+        ui.painter().rect_filled(foot.shrink2(Vec2::new(10.0, 4.0)), 16.0, Color32::from_rgba_unmultiplied(255, 255, 255, 14));
+        let mut fu = ui.new_child(egui::UiBuilder::new().max_rect(foot.shrink2(Vec2::new(22.0, 10.0))));
         fu.label(RichText::new(&meta.how).font(body(12.0)).color(DARK_TEXT2));
         let hint = if self.viewer.zoom > 1.01 { format!("{:.1}× · double-tap to fit · tap marks for details", self.viewer.zoom) } else { "Pinch to zoom · tap a mark for details · tap a legend entry to hide it".to_string() };
         fu.label(RichText::new(hint).font(body(12.0)).color(SECONDARY));

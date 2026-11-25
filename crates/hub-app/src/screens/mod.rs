@@ -75,25 +75,34 @@ impl App {
     }
 
     /// Bottom navigation for top-level destinations (≤ 5 items, labelled icons).
+    /// Floating pill navigation: glass capsule, accent disc under the active icon.
     pub fn bottom_nav(&mut self, ui: &mut Ui, rect: egui::Rect, cur: &Screen, dark: bool) {
+        let pill = egui::Rect::from_min_max(egui::pos2(rect.left() + 14.0, rect.top() + 8.0), egui::pos2(rect.right() - 14.0, rect.bottom() - 6.0));
         let p = ui.painter();
-        p.rect_filled(rect, 0.0, if dark { Color32::from_rgb(0x14, 0x10, 0x1c) } else { WHITE });
-        p.line_segment([rect.left_top(), rect.right_top()], Stroke::new(1.0, if dark { DARK_LINE } else { DIVIDER }));
+        let (fill, line) = if dark { (Color32::from_rgba_unmultiplied(34, 26, 70, 235), Color32::from_rgba_unmultiplied(255, 255, 255, 36)) } else { (Color32::from_rgb(0xF4, 0xF0, 0xFC), Color32::from_rgb(0xDD, 0xD3, 0xF2)) };
+        p.rect_filled(pill.translate(Vec2::new(0.0, 3.0)), pill.height() / 2.0, Color32::from_black_alpha(if dark { 70 } else { 22 }));
+        p.rect_filled(pill, pill.height() / 2.0, fill);
+        p.rect_stroke(pill, pill.height() / 2.0, Stroke::new(1.0, line), egui::StrokeKind::Inside);
         let items = [("Home", "home", Screen::Home), ("Matches", "list", Screen::Matches), ("Compare", "compare", Screen::Compare), ("Settings", "gear", Screen::Settings)];
-        let w = rect.width() / items.len() as f32;
+        let w = pill.width() / items.len() as f32;
         for (i, (label, icon, target)) in items.iter().enumerate() {
-            let r = egui::Rect::from_min_size(egui::pos2(rect.left() + i as f32 * w, rect.top()), Vec2::new(w, rect.height()));
+            let r = egui::Rect::from_min_size(egui::pos2(pill.left() + i as f32 * w, pill.top()), Vec2::new(w, pill.height()));
             let resp = ui.interact(r, ui.scope_id().with(("nav", i)), Sense::click());
             let active = cur == target;
-            let c = if active { if dark { PRIMARY_ON_DARK } else { PRIMARY } } else if dark { DARK_TEXT2 } else { TEXT2 };
+            let idle = if dark { DARK_TEXT2 } else { TEXT2 };
+            let c = if active { WHITE } else { idle };
+            let cy = r.center().y - 7.0;
             if active {
-                ui.painter().rect_filled(egui::Rect::from_center_size(egui::pos2(r.center().x, r.top() + 22.0), Vec2::new(56.0, 30.0)), 15.0, if dark { Color32::from_rgba_unmultiplied(187, 134, 255, 40) } else { Color32::from_rgb(0xEE, 0xE5, 0xFF) });
+                let d = 44.0;
+                let disc = egui::Rect::from_center_size(egui::pos2(r.center().x, cy), Vec2::splat(d));
+                ui.painter().circle_filled(disc.center(), d / 2.0, PRIMARY);
+                ui.painter().circle_stroke(disc.center(), d / 2.0, Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 60)));
             }
-            let ir = egui::Rect::from_center_size(egui::pos2(r.center().x, r.top() + 22.0), Vec2::splat(22.0));
+            let ir = egui::Rect::from_center_size(egui::pos2(r.center().x, cy), Vec2::splat(22.0));
             crate::screens::browse::draw_icon_col(ui, ir, icon, c);
-            ui.painter().text(egui::pos2(r.center().x, r.top() + 50.0), egui::Align2::CENTER_CENTER, *label, if active { semi(12.0) } else { body(12.0) }, c);
+            ui.painter().text(egui::pos2(r.center().x, r.bottom() - 10.0), egui::Align2::CENTER_CENTER, *label, if active { semi(11.0) } else { body(11.0) }, if active { if dark { WHITE } else { PRIMARY } } else { idle });
             if resp.is_pointer_button_down_on() {
-                ui.painter().rect_filled(r.shrink(4.0), 12.0, Color32::from_rgba_unmultiplied(98, 0, 238, 18));
+                ui.painter().circle_filled(egui::pos2(r.center().x, cy), 24.0, Color32::from_rgba_unmultiplied(255, 255, 255, 22));
             }
             if resp.clicked() && !active {
                 self.tab(target.clone());
@@ -224,7 +233,7 @@ impl App {
             ui.set_width(width);
             ui.horizontal(|ui| {
                 self.crest(ui, m, 0, 28.0);
-                ui.label(RichText::new(format!("{}  {}–{}  {}", fit_name(&e.s.home, &e.s.home_short, 11), e.s.score[0], e.s.score[1], fit_name(&e.s.away, &e.s.away_short, 11))).font(head(19.0)).color(BLACK));
+                ui.label(RichText::new(format!("{}  {}–{}  {}", fit_name(&e.s.home, &e.s.home_short, 11), e.s.score[0], e.s.score[1], fit_name(&e.s.away, &e.s.away_short, 11))).font(head(19.0)).color(fg()));
                 self.crest(ui, m, 1, 28.0);
             });
             ui.label(RichText::new(format!("{} · {}", if e.s.competition.is_empty() { "Match" } else { &e.s.competition }, e.s.date)).font(body(12.0)).color(sub()));

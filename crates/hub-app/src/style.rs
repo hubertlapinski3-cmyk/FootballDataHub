@@ -114,11 +114,11 @@ pub fn apply_visuals(ctx: &egui::Context, dark: bool) {
 
 pub fn card(dark: bool) -> Frame {
     Frame::new()
-        .fill(if dark { DARK_CARD } else { WHITE })
-        .corner_radius(CornerRadius::same(18))
+        .fill(if dark { Color32::from_rgba_unmultiplied(255, 255, 255, 13) } else { WHITE })
+        .corner_radius(CornerRadius::same(20))
         .inner_margin(Margin::same(16))
         .shadow(if dark { Shadow::NONE } else { Shadow { offset: [0, 3], blur: 14, spread: 0, color: Color32::from_black_alpha(38) } })
-        .stroke(if dark { Stroke::new(1.0, DARK_LINE) } else { Stroke::NONE })
+        .stroke(if dark { Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 28)) } else { Stroke::NONE })
 }
 
 /// Glass card for dark surfaces: translucent fill, hairline light border.
@@ -208,6 +208,46 @@ pub fn top_bar(ui: &mut Ui, title: &str, dark: bool) -> bool {
 pub fn section_title(ui: &mut Ui, t: &str, dark: bool) {
     ui.add_space(8.0);
     ui.label(RichText::new(t.to_uppercase()).font(bold(12.5)).color(if dark { DARK_TEXT2 } else { TEXT2 }));
+}
+
+/// Screen backdrop for dark surfaces: deep navy fading through indigo, with a soft teal glow low-right.
+pub fn backdrop(ui: &Ui, rect: egui::Rect) {
+    let top = Color32::from_rgb(0x1d, 0x14, 0x4a);
+    let mid = Color32::from_rgb(0x0f, 0x0e, 0x24);
+    let bot = Color32::from_rgb(0x07, 0x09, 0x14);
+    let h = rect.height();
+    let a = egui::Rect::from_min_max(rect.min, egui::pos2(rect.right(), rect.top() + h * 0.45));
+    let b = egui::Rect::from_min_max(egui::pos2(rect.left(), rect.top() + h * 0.45), rect.max);
+    gradient(ui, a, top, mid);
+    gradient(ui, b, mid, bot);
+    let p = ui.painter();
+    for (i, r) in [220.0f32, 160.0, 100.0].iter().enumerate() {
+        p.circle_filled(egui::pos2(rect.right() - 20.0, rect.bottom() - 140.0), *r, Color32::from_rgba_unmultiplied(3, 218, 198, 6 + i as u8 * 2));
+    }
+    for (i, r) in [200.0f32, 140.0, 80.0].iter().enumerate() {
+        p.circle_filled(egui::pos2(rect.left() + 10.0, rect.top() + 80.0), *r, Color32::from_rgba_unmultiplied(120, 70, 255, 8 + i as u8 * 3));
+    }
+}
+
+/// Underlined text tab row; returns the index tapped.
+pub fn tab_row(ui: &mut Ui, labels: &[&str], active: usize) -> Option<usize> {
+    let mut hit = None;
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 22.0;
+        for (i, l) in labels.iter().enumerate() {
+            let on = i == active;
+            let col = if on { WHITE } else { DARK_TEXT2 };
+            let r = ui.add(egui::Label::new(RichText::new(l.to_uppercase()).font(bold(15.0)).color(col)).sense(Sense::click()));
+            if on {
+                let y = r.rect.bottom() + 3.0;
+                ui.painter().line_segment([egui::pos2(r.rect.left(), y), egui::pos2(r.rect.right(), y)], Stroke::new(3.0, SECONDARY));
+            }
+            if r.clicked() {
+                hit = Some(i);
+            }
+        }
+    });
+    hit
 }
 
 /// Paint a vertical gradient (top -> bottom) into a rect.

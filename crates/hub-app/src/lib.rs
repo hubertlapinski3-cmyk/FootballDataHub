@@ -267,16 +267,16 @@ impl App {
             self.toast(&ctx, &format!("Build failed: {e}"));
         }
         let bg = if dark { style::BOARD_BG } else { style::WHITE };
-        let safe = ctx.content_rect();
+        let safe = self.safe_rect(&ctx);
         egui::CentralPanel::default().frame(egui::Frame::new().fill(bg).inner_margin(egui::Margin { left: 0, right: 0, top: 0, bottom: 0 })).show(ui, |ui| {
             let full = ui.max_rect();
             if dark {
-                style::gradient(ui, full, style::BOARD_BG, style::BOARD_BG2);
+                style::backdrop(ui, full);
             }
             let mut inner = full.intersect(safe);
             let top_level = matches!(scr, Screen::Home | Screen::Matches | Screen::Compare | Screen::Settings);
             if top_level {
-                let nav = egui::Rect::from_min_max(egui::pos2(inner.left(), inner.bottom() - 68.0), inner.max);
+                let nav = egui::Rect::from_min_max(egui::pos2(inner.left(), inner.bottom() - 80.0), inner.max);
                 inner.max.y = nav.top();
                 self.bottom_nav(ui, nav, &scr, dark);
             }
@@ -312,6 +312,30 @@ impl App {
             ctx.request_repaint_after(std::time::Duration::from_millis(120));
         }
         self.soft_keyboard(&ctx);
+    }
+
+    /// Drawable area: the window minus system bars. Android reports the content rect in pixels;
+    /// when it claims the full window (edge-to-edge) fixed minimum insets keep the UI clear of
+    /// the status bar and the navigation bar.
+    #[allow(unused_variables)]
+    fn safe_rect(&self, ctx: &egui::Context) -> egui::Rect {
+        let full = ctx.content_rect();
+        #[cfg(target_os = "android")]
+        {
+            let ppp = ctx.pixels_per_point().max(0.5);
+            let mut top = 0.0f32;
+            let mut bottom = 0.0f32;
+            if let Some(a) = &self.android {
+                let r = a.content_rect();
+                if r.right > r.left && r.bottom > r.top {
+                    top = r.top as f32 / ppp;
+                    bottom = (full.bottom() - r.bottom as f32 / ppp).max(0.0);
+                }
+            }
+            return egui::Rect::from_min_max(egui::pos2(full.left(), full.top() + top.max(36.0)), egui::pos2(full.right(), full.bottom() - bottom.max(44.0)));
+        }
+        #[cfg(not(target_os = "android"))]
+        full
     }
 
     #[allow(unused_variables)]
