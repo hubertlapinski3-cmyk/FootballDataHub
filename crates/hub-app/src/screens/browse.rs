@@ -814,6 +814,20 @@ pub fn draw_icon_col(ui: &Ui, r: egui::Rect, kind: &str, colr: Color32) {
             p.add(egui::Shape::convex_polygon(vec![egui::pos2(c.x, r.top() + 1.0), egui::pos2(r.right() - 1.0, c.y - 1.0), egui::pos2(r.left() + 1.0, c.y - 1.0)], Color32::TRANSPARENT, st));
             p.rect_stroke(egui::Rect::from_min_max(egui::pos2(r.left() + 4.0, c.y - 1.0), egui::pos2(r.right() - 4.0, r.bottom() - 1.0)), 2.0, st, egui::StrokeKind::Middle);
         }
+        "share" => {
+            // tray with an arrow leaving it
+            p.line_segment([egui::pos2(c.x, r.top() + 2.0), egui::pos2(c.x, c.y + 3.0)], st);
+            p.line_segment([egui::pos2(c.x - 5.0, r.top() + 7.0), egui::pos2(c.x, r.top() + 2.0)], st);
+            p.line_segment([egui::pos2(c.x + 5.0, r.top() + 7.0), egui::pos2(c.x, r.top() + 2.0)], st);
+            p.line_segment([egui::pos2(r.left() + 3.0, c.y + 1.0), egui::pos2(r.left() + 3.0, r.bottom() - 2.0)], st);
+            p.line_segment([egui::pos2(r.left() + 3.0, r.bottom() - 2.0), egui::pos2(r.right() - 3.0, r.bottom() - 2.0)], st);
+            p.line_segment([egui::pos2(r.right() - 3.0, r.bottom() - 2.0), egui::pos2(r.right() - 3.0, c.y + 1.0)], st);
+        }
+        "info" => {
+            p.circle_stroke(c, r.width() / 2.0 - 2.0, st);
+            p.circle_filled(egui::pos2(c.x, c.y - 5.0), 1.8, colr);
+            p.line_segment([egui::pos2(c.x, c.y - 1.0), egui::pos2(c.x, c.y + 6.0)], st);
+        }
         "compare" => {
             p.line_segment([egui::pos2(r.left() + 3.0, c.y - 5.0), egui::pos2(r.right() - 3.0, c.y - 5.0)], st);
             p.line_segment([egui::pos2(r.right() - 9.0, c.y - 10.0), egui::pos2(r.right() - 3.0, c.y - 5.0)], st);

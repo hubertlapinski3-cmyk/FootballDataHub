@@ -328,24 +328,28 @@ pub fn corridors(c: &Ctx) -> Board {
         p.label_attack(&mut s);
         p.draw(&mut s);
         let ev = &c.m.events;
-        let draw = |s: &mut Svg, idx: &[usize], colr: &str, w: f64| {
+        let draw = |s: &mut Svg, idx: &[usize], colr: &str, w: f64, layer: &str, dash: bool| {
             for &q in idx {
                 let e = &ev[q];
                 // clip to the visible pitch so no line leaves it
                 let Some(((x1, y1), (x2, y2), end_in)) = clip_seg((e.x, e.y), e.end(), p.lmin, 105.0, 0.0, 68.0) else { continue };
                 let (a1, b1) = p.p(x1, y1);
                 let (a2, b2) = p.p(x2, y2);
-                s.line(a1, b1, a2, b2, colr, w, r#"opacity="0.85""#);
+                s.layer = Some(layer.to_string());
+                s.tip = Some(format!("{} {} · {} · {} · {}", c.pname(*sd, e.player), e.label_minute(), layer, if e.success { "completed" } else { "incomplete" }, c.name(*sd)));
+                // the dash keeps through-balls distinguishable without colour
+                s.line(a1, b1, a2, b2, colr, w, if dash { r#"opacity="0.9" stroke-dasharray="7 5""# } else { r#"opacity="0.9""# });
                 if end_in {
-                    s.circle(a2, b2, 3.0, colr, "none", 0.0, "");
+                    s.circle(a2, b2, 3.4, colr, "none", 0.0, "");
                 }
+                s.layer = None;
             }
         };
-        draw(&mut s, &t.hs_left, &sem.hs_left, 1.6);
-        draw(&mut s, &t.hs_right, &sem.hs_right, 1.6);
-        draw(&mut s, &t.z14, &sem.z14, 1.6);
-        draw(&mut s, &t.cutbacks, &sem.cutback, 3.0);
-        draw(&mut s, &t.through_balls, &sem.through, 3.0);
+        draw(&mut s, &t.hs_left, &sem.hs_left, 2.2, "Left half-space", false);
+        draw(&mut s, &t.hs_right, &sem.hs_right, 2.2, "Right half-space", false);
+        draw(&mut s, &t.z14, &sem.z14, 2.2, "Zone 14 pass", false);
+        draw(&mut s, &t.cutbacks, &sem.cutback, 3.4, "Cutback", false);
+        draw(&mut s, &t.through_balls, &sem.through, 3.4, "Through-ball attempt", true);
         for (lab, xm, n) in [("LHS", 48.6, t.hs_left.len()), ("ZONE 14", 34.0, t.z14.len()), ("RHS", 19.4, t.hs_right.len())] {
             let (lx, ly) = p.p(60.0, xm);
             s.rrect(lx - 38.0, ly - 12.0, 76.0, 22.0, 4.0, "#0b0a12", "#cfcdd8", 1.0);
@@ -361,6 +365,9 @@ pub fn corridors(c: &Ctx) -> Board {
     let y = 1024.0;
     lx = legend_item(&mut s, lx, y, "diamond", &sem.cutback, "Cutback (inside box)");
     legend_item(&mut s, lx, y, "diamond", &sem.through, "Through-ball attempt");
+    for k in ["Zone 14 pass", "Right half-space", "Left half-space", "Cutback", "Through-ball attempt"] {
+        s.layer_idx(k);
+    }
     let _ = col_unused();
     footer(&mut s, c, "Each pitch maps completed passes into central Zone 14 and the left/right half-spaces outside the box, alongside cutbacks and through-balls. Compare interior pocket access with each corridor's pass total.");
     Board::new("05_creation_corridors", "Creation corridors", s)

@@ -8,7 +8,7 @@ use egui::{Align, Color32, Layout, Rect, RichText, ScrollArea, Sense, Stroke, Ui
 
 /// Height available to the board canvas for a window of the given height.
 fn canvas_h_hint(window_h: f32) -> f32 {
-    (window_h - 140.0 - 8.0).max(100.0)
+    (window_h - 128.0 - 8.0).max(100.0)
 }
 
 impl App {
@@ -23,7 +23,7 @@ impl App {
             return;
         };
         let full = ui.max_rect();
-        let chrome = if scope_variants(&e, board).len() > 1 { 140.0 } else { 100.0 };
+        let chrome = if scope_variants(&e, board).len() > 1 { 128.0 } else { 70.0 };
         // ---- chrome top
         let mut top = ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_size(full.min, Vec2::new(full.width(), chrome))));
         egui::Frame::new().inner_margin(egui::Margin::symmetric(10, 2)).show(&mut top, |ui| {
@@ -42,10 +42,18 @@ impl App {
                         }
                         self.viewer.pan = Vec2::ZERO;
                     }
-                    if ui.add(egui::Button::new(RichText::new("Info").font(semi(14.0)).color(PRIMARY_ON_DARK)).fill(Color32::TRANSPARENT).min_size(Vec2::splat(48.0))).on_hover_text("Provenance").clicked() {
+                    let mut icon_btn = |ui: &mut Ui, kind: &str, id: &str| -> bool {
+                        let (r, resp) = ui.allocate_exact_size(Vec2::splat(48.0), Sense::click());
+                        let c = if resp.is_pointer_button_down_on() { WHITE } else { PRIMARY_ON_DARK };
+                        crate::screens::browse::draw_icon_col(ui, Rect::from_center_size(r.center(), Vec2::splat(24.0)), kind, c);
+                        let _ = id;
+                        resp.clicked()
+                    };
+                    if icon_btn(ui, "info", "info") {
                         self.viewer.show_manifest = !self.viewer.show_manifest;
                     }
-                    if ui.add(egui::Button::new(RichText::new("Export").font(semi(14.0)).color(PRIMARY_ON_DARK)).fill(Color32::TRANSPARENT).min_size(Vec2::splat(48.0))).on_hover_text("Export PNG").clicked() {
+                    ui.add_space(8.0);
+                    if icon_btn(ui, "share", "export") {
                         self.export_board(ui.ctx(), m, board);
                     }
                 });
@@ -75,15 +83,6 @@ impl App {
                     }
                 });
             }); }
-            // subdued fallback notice
-            let note = if board.starts_with("22_") || board.starts_with("24_") {
-                Some("PSxG from the local placement model where no xGOT was fetched: no shot velocity or keeper position.".to_string())
-            } else {
-                e.s.fallbacks.iter().find(|f| f.contains("unavailable") || f.contains("skipped")).cloned()
-            };
-            if let Some(n) = note {
-                ui.label(RichText::new(format!("Note: {n}")).font(body(12.0)).color(DARK_TEXT2));
-            }
         });
         // ---- board canvas
         let canvas = Rect::from_min_max(egui::pos2(full.left(), full.top() + chrome), egui::pos2(full.right(), full.bottom() - 8.0));

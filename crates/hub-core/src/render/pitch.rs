@@ -96,7 +96,7 @@ impl Pitch {
     }
     pub fn label_attack(&self, s: &mut Svg) {
         match self.orient {
-            Orient::Up => s.t(self.x0 + self.w / 2.0, self.y0 - 12.0, "ATTACK", 13.0, 700, theme::TEXT, super::svg::Anchor::Middle),
+            Orient::Up => s.t(self.x0 + self.w / 2.0, self.y0 - 12.0, "ATTACK ↑", 13.0, 700, theme::TEXT, super::svg::Anchor::Middle),
             Orient::Right => s.t(self.x0 + self.w / 2.0, self.y0 - 12.0, "ATTACK →", 13.0, 700, theme::TEXT, super::svg::Anchor::Middle),
         }
     }

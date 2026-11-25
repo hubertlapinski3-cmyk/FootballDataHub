@@ -222,7 +222,14 @@ fn leaf(items: &[usize], b: Box4, sc: &Scene, x: f32, y: f32, sx: f32, sy: f32, 
         out.prims.push(Prim::R { x: x - 10.0, y: y - 10.0, w: w + 20.0, h: h + 20.0, r: 16.0, f: "#ffffff".into(), s: "none".into(), sw: 0.0, o: 0.045, t: -1, l: -1 });
     }
     for &i in items {
-        out.prims.push(boost(xf(&sc.prims[i], b.0, b.1, sx, sy, x, y), TEXT_BOOST));
+        let mut q = boost(xf(&sc.prims[i], b.0, b.1, sx, sy, x, y), TEXT_BOOST);
+        // data lines keep a legible weight after scaling
+        if let Prim::L { sw, t, l, .. } = &mut q {
+            if *t >= 0 || *l >= 0 {
+                *sw = sw.max(2.2);
+            }
+        }
+        out.prims.push(q);
     }
     out.maps.push((b, b.0, b.1, sx, sy, x, y));
 }
@@ -368,25 +375,15 @@ pub fn reflow(sc: &Scene) -> Option<Scene> {
     if let Some((txt, col)) = &subtitle {
         let size = 15.0f32;
         let per_line = ((PW - 48.0) / (size * 0.56)) as usize;
-        let mut cur = String::new();
-        let mut lines = vec![];
-        for w in txt.split_whitespace() {
-            if cur.chars().count() + w.chars().count() + 1 > per_line && !cur.is_empty() {
-                lines.push(std::mem::take(&mut cur));
-            }
-            if !cur.is_empty() {
-                cur.push(' ');
-            }
-            cur.push_str(w);
-        }
-        if !cur.is_empty() {
-            lines.push(cur);
+        // one line only: the full method text lives in the Info sheet
+        let mut line: String = txt.chars().take(per_line).collect();
+        if txt.chars().count() > per_line {
+            line = line.trim_end().trim_end_matches(|c: char| !c.is_alphanumeric()).to_string();
+            line.push('…');
         }
         y += 2.0;
-        for l in lines {
-            prims.push(Prim::T { x: 24.0, y: y + size, runs: vec![(l, col.clone())], sz: size, w: 400, hd: false, a: 0, o: 1.0, l: -1 });
-            y += size + 6.0;
-        }
+        prims.push(Prim::T { x: 24.0, y: y + size, runs: vec![(line, col.clone())], sz: size, w: 400, hd: false, a: 0, o: 1.0, l: -1 });
+        y += size + 6.0;
     }
     // teams / score cluster, centred (right cluster spans about x 1070..1540 on the landscape canvas)
     let row_y = y + 34.0;
