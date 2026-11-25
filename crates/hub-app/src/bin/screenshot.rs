@@ -108,6 +108,7 @@ fn raster(prims: &[ClippedPrimitive], texs: &HashMap<TextureId, Tex>, w: usize, 
 }
 
 struct Harness {
+    time: f64,
     ctx: egui::Context,
     app: App,
     texs: HashMap<TextureId, Tex>,
@@ -117,8 +118,10 @@ struct Harness {
 
 impl Harness {
     fn step(&mut self, events: Vec<egui::Event>) -> Vec<ClippedPrimitive> {
+        self.time += 0.1;
         let input = RawInput {
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, self.size)),
+            time: Some(self.time),
             events,
             ..Default::default()
         };
@@ -177,14 +180,14 @@ fn main() {
     let mut app = App::new(&ctx, root.clone());
     if app.lib.entries.is_empty() {
         eprintln!("building sample match…");
-        library::build_match(&root, Source::Sample, false, Default::default()).expect("sample build");
+        library::build_match(&root, Source::Sample, false, None, Default::default()).expect("sample build");
         if let Some(ws) = args.get(3) {
             eprintln!("building WhoScored match…");
-            library::build_match(&root, Source::WhoScored(ws.clone()), false, Default::default()).expect("ws build");
+            library::build_match(&root, Source::WhoScored(ws.clone()), false, None, Default::default()).expect("ws build");
         }
         app.lib.reload();
     }
-    let mut h = Harness { ctx, app, texs: HashMap::new(), size: Vec2::new(412.0, 915.0), ppp: 2.0 };
+    let mut h = Harness { time: 100.0, ctx, app, texs: HashMap::new(), size: Vec2::new(412.0, 915.0), ppp: 2.0 };
     let o = |n: &str| out.join(n).display().to_string();
     let sample = h.app.lib.entries.iter().position(|e| e.s.source == "statsbomb").unwrap_or(0);
 
@@ -196,8 +199,32 @@ fn main() {
     h.shot(&o("3_hub.png"), 0.0);
     h.shot(&o("3b_hub_scrolled.png"), 1400.0);
     h.app.stack = vec![Screen::Home, Screen::Hub(sample), Screen::Viewer { m: sample, board: "08_box_entries_home".into() }];
-    h.app.viewer = hub_app::ViewerState { zoom: 1.0, pan: Vec2::ZERO, show_manifest: false };
+    h.app.viewer = hub_app::ViewerState::fresh(-10.0);
     h.shot(&o("4_viewer.png"), 0.0);
+    // interactive state: tooltip on the biggest shot of the home shot map, one legend layer hidden
+    h.app.stack = vec![Screen::Home, Screen::Hub(sample), Screen::Viewer { m: sample, board: "07_shot_map_home".into() }];
+    h.app.viewer = hub_app::ViewerState::fresh(-10.0);
+    {
+        let p = h.app.lib.entries[sample].dir.join("boards").join("07_shot_map_home.scene.json");
+        let sc: matchhub::render::svg::Scene = serde_json::from_str(&std::fs::read_to_string(p).unwrap()).unwrap();
+        let mut best = None;
+        for (i, pr) in sc.prims.iter().enumerate() {
+            if let matchhub::render::svg::Prim::C { r, t, .. } = pr {
+                if *t >= 0 && best.map(|(_, _, br)| *r > br).unwrap_or(true) {
+                    best = Some((i, *t, *r));
+                }
+            }
+        }
+        if let Some((i, t, _)) = best {
+            h.app.viewer.selected = Some((i, t));
+        }
+        if let Some(l) = sc.layers.iter().position(|x| x == "Blocked") {
+            h.app.viewer.hidden.insert(l as i32);
+        }
+    }
+    h.shot(&o("4c_viewer_tooltip.png"), 0.0);
+    h.app.stack = vec![Screen::Home, Screen::Hub(sample), Screen::Viewer { m: sample, board: "08_box_entries_home".into() }];
+    h.app.viewer = hub_app::ViewerState::fresh(-10.0);
     h.app.viewer.show_manifest = true;
     h.shot(&o("4b_viewer_manifest.png"), 0.0);
     h.app.viewer.show_manifest = false;

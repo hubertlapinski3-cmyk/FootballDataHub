@@ -14,7 +14,7 @@ impl App {
         // build the bundled sample in the background so the preview shows a real board
         if self.lib.entries.is_empty() && !self.build.lock().unwrap().running && self.build.lock().unwrap().step.is_empty() {
             self.open_on_done = false;
-            library::spawn_build(self.root.clone(), Source::Sample, false, self.build.clone(), ui.ctx().clone());
+            library::spawn_build(self.root.clone(), Source::Sample, false, None, self.build.clone(), ui.ctx().clone());
         }
         let preview = self.lib.entries.iter().position(|e| e.s.source == "statsbomb").or(if self.lib.entries.is_empty() { None } else { Some(0) });
         ScrollArea::vertical().id_salt("onb").show(ui, |ui| egui::Frame::new().inner_margin(egui::Margin::symmetric(18, 0)).show(ui, |ui| {
@@ -30,10 +30,9 @@ impl App {
                 ui.set_width(ui.available_width());
                 let w = ui.available_width();
                 let h = w * 1130.0 / 1600.0;
-                let tex = preview.and_then(|i| self.raster.get(self.board_path(i, "01_xg_flow"), 0.45));
-                match tex {
-                    Some(t) => {
-                        ui.add(egui::Image::new(&t).fit_to_exact_size(Vec2::new(w, h)).corner_radius(10));
+                match preview {
+                    Some(i) => {
+                        self.draw_board(ui, i, "01_xg_flow", w, false, true);
                     }
                     None => {
                         let (r, _) = ui.allocate_exact_size(Vec2::new(w, h), Sense::hover());
@@ -43,7 +42,7 @@ impl App {
                     }
                 }
                 let cap = preview.map(|i| { let s = &self.lib.entries[i].s; format!("Sample board: xG flow · {} {}–{} {} · {}", s.home, s.score[0], s.score[1], s.away, s.competition) }).unwrap_or_else(|| "Sample board: xG flow".into());
-                ui.label(RichText::new(cap).font(body(11.5)).color(DARK_TEXT2));
+                ui.label(RichText::new(cap).font(body(12.0)).color(DARK_TEXT2));
             });
             ui.add_space(18.0);
             ui.label(RichText::new("How the win model works").font(head(22.0)).color(WHITE));
@@ -74,16 +73,16 @@ impl App {
                     if cta(ui, "Build Match", ok) {
                         let s = self.input.trim().to_string();
                         let is_file = std::path::Path::new(&s).exists();
-                        if !is_file && !self.prefs.personal_fetch {
-                            self.toast(ui.ctx(), "Online fetching is off. Enable the personal-use flag in Settings, or import a saved page.");
+                        if !is_file && !self.prefs.online() {
+                            self.toast(ui.ctx(), "Online fetching is off. Set a scrape relay or the personal-use flag in Settings, or import a saved page.");
                         } else {
                             self.open_on_done = true;
-                            library::spawn_build(self.root.clone(), Source::WhoScored(s), self.prefs.personal_fetch, self.build.clone(), ui.ctx().clone());
+                            library::spawn_build(self.root.clone(), Source::WhoScored(s), self.prefs.online(), self.prefs.relay(), self.build.clone(), ui.ctx().clone());
                         }
                     }
                     if ghost(ui, "Sample match", false) && !running {
                         self.open_on_done = true;
-                        library::spawn_build(self.root.clone(), Source::Sample, false, self.build.clone(), ui.ctx().clone());
+                        library::spawn_build(self.root.clone(), Source::Sample, false, None, self.build.clone(), ui.ctx().clone());
                     }
                 });
                 // saved pages dropped into the import folder
@@ -94,11 +93,11 @@ impl App {
                         let name = f.file_name().map(|x| x.to_string_lossy().to_string()).unwrap_or_default();
                         if ui.add(egui::Button::new(RichText::new(format!("⤓  {name}")).font(body(14.0))).min_size(Vec2::new(ui.available_width(), 44.0))).clicked() && !running {
                             self.open_on_done = true;
-                            library::spawn_build(self.root.clone(), Source::WhoScored(f.display().to_string()), self.prefs.personal_fetch, self.build.clone(), ui.ctx().clone());
+                            library::spawn_build(self.root.clone(), Source::WhoScored(f.display().to_string()), self.prefs.online(), self.prefs.relay(), self.build.clone(), ui.ctx().clone());
                         }
                     }
                 } else {
-                    ui.label(RichText::new(format!("Saved WhoScored pages (.html / .json / .gz) placed in {} appear here.", self.import_dir().display())).font(body(11.5)).color(TEXT2));
+                    ui.label(RichText::new(format!("Saved WhoScored pages (.html / .json / .gz) placed in {} appear here.", self.import_dir().display())).font(body(12.0)).color(TEXT2));
                 }
                 ui.add_space(6.0);
                 self.build_status(ui, false);
@@ -179,12 +178,14 @@ impl App {
             let mut del = None;
             ScrollArea::vertical().id_salt("matches").show(ui, |ui| {
                 for i in 0..self.lib.entries.len() {
+                    let a = self.stagger(i);
+                    ui.set_opacity(a);
                     let w = ui.available_width() - 34.0;
                     if self.match_card(ui, i, w) {
                         open = Some(i);
                     }
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new(format!("{} boards · {}", self.lib.entries[i].s.boards.len(), self.lib.entries[i].s.source)).font(body(11.0)).color(TEXT2));
+                        ui.label(RichText::new(format!("{} boards · {}", self.lib.entries[i].s.boards.len(), self.lib.entries[i].s.source)).font(body(12.0)).color(TEXT2));
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                             if ui.add(egui::Button::new(RichText::new("Delete").color(ERROR)).fill(Color32::TRANSPARENT)).clicked() {
                                 del = Some(i);
@@ -245,10 +246,12 @@ impl App {
                     }
                 });
                 if !e.s.fallbacks.is_empty() {
-                    ui.label(RichText::new(format!("Note: {} source fallback(s): {}", e.s.fallbacks.len(), e.s.fallbacks[0])).font(body(11.0)).color(DARK_TEXT2));
+                    ui.label(RichText::new(format!("Note: {} source fallback(s): {}", e.s.fallbacks.len(), e.s.fallbacks[0])).font(body(12.0)).color(DARK_TEXT2));
                 }
                 let w = ui.available_width();
                 let tw = (w - 12.0) / 2.0;
+                let mut open_board: Option<String> = None;
+                let mut tile_i = 0usize;
                 for (sec, boards) in boards_by_section(&e) {
                     section_title(ui, &sec, true);
                     let label = |b: &library::BoardMeta| {
@@ -261,7 +264,11 @@ impl App {
                         items.push(("__players".into(), "Player cards".into()));
                     }
                     for row in items.chunks(2) {
+                        let a = self.stagger(tile_i);
+                        tile_i += 2;
                         ui.horizontal(|ui| {
+                            ui.set_opacity(a);
+                            ui.add_space((1.0 - a) * 0.0);
                             for (id, title) in row {
                                 let r = ui.allocate_ui(Vec2::new(tw, tw * 1130.0 / 1600.0 + 40.0), |ui| {
                                     ui.vertical(|ui| {
@@ -271,30 +278,23 @@ impl App {
                                             ui.painter().rect_filled(r, 10.0, DARK_CARD);
                                             ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, format!("{} players →", e.s.players.len()), head(22.0), WHITE);
                                         } else {
-                                            match self.raster.get(self.board_path(m, id), 0.22) {
-                                                Some(t) => {
-                                                    ui.add(egui::Image::new(&t).fit_to_exact_size(Vec2::new(tw, th)).corner_radius(10));
-                                                }
-                                                None => {
-                                                    let (r, _) = ui.allocate_exact_size(Vec2::new(tw, th), Sense::hover());
-                                                    ui.painter().rect_filled(r, 10.0, Color32::from_rgb(0x18, 0x13, 0x22));
-                                                    ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, "rendering…", body(11.0), DARK_TEXT2);
-                                                }
+                                            let _ = th;
+                                            if self.draw_board(ui, m, id, tw, true, false).clicked() {
+                                                open_board = Some(id.clone());
                                             }
                                         }
-                                        ui.label(RichText::new(title).font(semi(12.5)).color(WHITE));
+                                        ui.label(RichText::new(title).font(semi(13.0)).color(WHITE));
                                     });
                                 });
-                                if r.response.interact(Sense::click()).clicked() {
-                                    if id == "__players" {
-                                        self.push(Screen::Players(m));
-                                    } else {
-                                        self.push(Screen::Viewer { m, board: id.clone() });
-                                    }
+                                if id == "__players" && r.response.interact(Sense::click()).clicked() {
+                                    self.push(Screen::Players(m));
                                 }
                             }
                         });
                     }
+                }
+                if let Some(b) = open_board {
+                    self.push(Screen::Viewer { m, board: b });
                 }
                 ui.add_space(24.0);
             });
@@ -364,8 +364,11 @@ impl App {
                     ui.label(RichText::new(if side == 0 { e.s.home.to_uppercase() } else { e.s.away.to_uppercase() }).font(head(22.0)).color(col));
                     let mut ps: Vec<&library::PlayerMeta> = e.s.players.iter().filter(|p| p.side == side).collect();
                     ps.sort_by(|a, b| b.minutes.partial_cmp(&a.minutes).unwrap());
-                    for p in ps {
-                        let r = egui::Frame::new().fill(DARK_CARD).corner_radius(12).inner_margin(10).show(ui, |ui| {
+                    for (k, p) in ps.into_iter().enumerate() {
+                        let a = self.stagger(k);
+                        ui.set_opacity(1.0);
+                        let r = glass().show(ui, |ui| {
+                            ui.set_opacity(a);
                             ui.set_width(ui.available_width());
                             ui.horizontal(|ui| {
                                 let (rr, _) = ui.allocate_exact_size(Vec2::splat(34.0), Sense::hover());
@@ -373,7 +376,7 @@ impl App {
                                 ui.painter().text(rr.center(), egui::Align2::CENTER_CENTER, p.shirt.to_string(), bold(13.0), on(col));
                                 ui.vertical(|ui| {
                                     ui.label(RichText::new(&p.name).font(semi(15.0)).color(WHITE));
-                                    ui.label(RichText::new(format!("{} · {:.0} min · {} touches · {} shots", p.role, p.minutes, p.touches, p.shots)).font(body(11.5)).color(DARK_TEXT2));
+                                    ui.label(RichText::new(format!("{} · {:.0} min · {} touches · {} shots", p.role, p.minutes, p.touches, p.shots)).font(body(12.0)).color(DARK_TEXT2));
                                 });
                                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                                     let v = p.vaep;
@@ -381,7 +384,9 @@ impl App {
                                 });
                             });
                         });
-                        if r.response.interact(Sense::click()).clicked() {
+                        let resp = r.response.interact(Sense::click());
+                        press_overlay(ui, &resp, 16.0, true);
+                        if resp.clicked() {
                             self.push(Screen::Player { m, id: p.id });
                         }
                     }
@@ -408,7 +413,7 @@ impl App {
                 ui.columns(3, |c| {
                     for (k, (v, l)) in [(format!("{:.2}", p.xg), "xG"), (format!("{:.2}", p.xa), "INFERRED xA"), (format!("{}{:.2}", if p.vaep >= 0.0 { "+" } else { "" }, p.vaep), "VAEP")].iter().enumerate() {
                         c[k].label(RichText::new(v).font(head(34.0)).color(col));
-                        c[k].label(RichText::new(*l).font(bold(11.0)).color(WHITE));
+                        c[k].label(RichText::new(*l).font(bold(12.0)).color(WHITE));
                     }
                 });
                 if p.role == "Goalkeeper" {
@@ -417,21 +422,10 @@ impl App {
                     }
                 }
                 let w = ui.available_width();
-                let h = w * 1500.0 / 1600.0;
-                match self.raster.get(self.board_path(m, &p.board), 0.7) {
-                    Some(t) => {
-                        let r = ui.add(egui::Image::new(&t).fit_to_exact_size(Vec2::new(w, h)).corner_radius(10).sense(Sense::click()));
-                        if r.clicked() {
-                            self.push(Screen::Viewer { m, board: p.board.clone() });
-                        }
-                    }
-                    None => {
-                        let (r, _) = ui.allocate_exact_size(Vec2::new(w, h), Sense::hover());
-                        ui.painter().rect_filled(r, 10.0, DARK_CARD);
-                        ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, "Rendering player card…", body(13.0), DARK_TEXT2);
-                    }
+                if self.draw_board(ui, m, &p.board, w, false, true).clicked() {
+                    self.push(Screen::Viewer { m, board: p.board.clone() });
                 }
-                ui.label(RichText::new("Tap the card to zoom. Percentiles compare players in the same role with 30+ minutes; below four peers the pool widens to every 30+ minute player and the caption says so.").font(body(11.5)).color(DARK_TEXT2));
+                ui.label(RichText::new("Tap the card to zoom and inspect each wedge. Percentiles compare players in the same role with 30+ minutes; below four peers the pool widens to every 30+ minute player and the caption says so.").font(body(12.0)).color(DARK_TEXT2));
                 ui.add_space(20.0);
             });
         });
@@ -457,7 +451,7 @@ impl App {
                     let cur = if k == 0 { self.compare.left } else { self.compare.right };
                     let cur_label = teams.iter().find(|t| Some((t.0, t.1)) == cur).map(|t| t.2.clone()).unwrap_or_default();
                     let col = cur.map(|(m, s)| self.team_col(m, s)).unwrap_or(WHITE);
-                    ui.label(RichText::new(label).font(bold(11.0)).color(DARK_TEXT2));
+                    ui.label(RichText::new(label).font(bold(12.0)).color(DARK_TEXT2));
                     egui::ComboBox::from_id_salt(("cmp", k)).selected_text(RichText::new(&cur_label).color(col)).width(ui.available_width()).show_ui(ui, |ui| {
                         for t in &teams {
                             let sel = Some((t.0, t.1)) == cur;
@@ -581,15 +575,8 @@ impl App {
                 ui.horizontal(|ui| {
                     for (mi, si) in [l, r] {
                         let id = format!("07_shot_map_{}", if si == 0 { "home" } else { "away" });
-                        match self.raster.get(self.board_path(mi, &id), 0.22) {
-                            Some(t) => {
-                                if ui.add(egui::Image::new(&t).fit_to_exact_size(Vec2::new(w, w * 1130.0 / 1600.0)).corner_radius(8).sense(Sense::click())).clicked() {
-                                    self.push(Screen::Viewer { m: mi, board: id });
-                                }
-                            }
-                            None => {
-                                ui.allocate_exact_size(Vec2::new(w, w * 0.7), Sense::hover());
-                            }
+                        if self.draw_board(ui, mi, &id, w, true, false).clicked() {
+                            self.push(Screen::Viewer { m: mi, board: id });
                         }
                     }
                 });
@@ -628,7 +615,40 @@ impl App {
                         self.prefs.personal_fetch = v;
                         self.save_prefs();
                     }
-                    ui.label(RichText::new("These sites' terms generally prohibit automated scraping and redistribution. Keep this for personal use, one polite request per match, cached afterwards. If WhoScored shows a bot wall, save the page in a browser and import it instead.").font(body(11.5)).color(TEXT2));
+                    ui.label(RichText::new("These sites' terms generally prohibit automated scraping and redistribution. Keep this for personal use, one polite request per match, cached afterwards. If WhoScored shows a bot wall, save the page in a browser and import it instead.").font(body(12.0)).color(TEXT2));
+                });
+                section_title(ui, "Scrape relay (GitHub Actions)", false);
+                card(false).show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.label(RichText::new("WhoScored blocks plain requests, so links are scraped by a headless browser in your repository's scrape-whoscored workflow (built on ricardoherediaj/football-analytics-tutorials). The app reads finished matches from the repo and, with a token, starts the run itself.").font(body(12.5)).color(TEXT2));
+                    ui.label(RichText::new("Repository (owner/name)").font(semi(13.0)));
+                    if ui.add(egui::TextEdit::singleline(&mut self.prefs.relay_repo).desired_width(f32::INFINITY).min_size(Vec2::new(0.0, 44.0))).lost_focus() {
+                        self.save_prefs();
+                    }
+                    ui.label(RichText::new("Token (fine-grained: Actions read/write + Contents read on that repo only)").font(semi(13.0)));
+                    ui.horizontal(|ui| {
+                        let r = ui.add(egui::TextEdit::singleline(&mut self.prefs.relay_token).password(!self.show_token).desired_width(ui.available_width() - 70.0).min_size(Vec2::new(0.0, 44.0)));
+                        if r.lost_focus() {
+                            self.save_prefs();
+                        }
+                        if chip(ui, if self.show_token { "Hide" } else { "Show" }, false, false) {
+                            self.show_token = !self.show_token;
+                        }
+                    });
+                    ui.label(RichText::new("Stored only in this app's private storage, never in the repository. Without a token the app still reads matches you scrape by hand (Actions > scrape-whoscored > Run workflow).").font(body(12.0)).color(TEXT2));
+                    if ghost(ui, "Save relay", false) {
+                        self.save_prefs();
+                        self.toast(ui.ctx(), if self.prefs.relay().is_some() { "Relay saved" } else { "Relay disabled (enter owner/name)" });
+                    }
+                });
+                section_title(ui, "Motion", false);
+                card(false).show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    let mut v = self.prefs.reduced_motion;
+                    if ui.checkbox(&mut v, RichText::new("Reduce motion (no entrance animations on boards and lists)").font(body(14.0))).changed() {
+                        self.prefs.reduced_motion = v;
+                        self.save_prefs();
+                    }
                 });
                 section_title(ui, "Cache", false);
                 let cache = self.root.join("cache");
@@ -668,9 +688,9 @@ impl App {
                 section_title(ui, "Metric version log", false);
                 ui.label(RichText::new(format!("App metric_version {}", matchhub::METRIC_VERSION)).font(body(12.5)));
                 for e in &self.lib.entries {
-                    ui.label(RichText::new(format!("{} v {} · metric {} · built {}", e.s.home, e.s.away, e.s.metric_version, &e.s.built_at[..16.min(e.s.built_at.len())])).font(body(11.5)).color(TEXT2));
+                    ui.label(RichText::new(format!("{} v {} · metric {} · built {}", e.s.home, e.s.away, e.s.metric_version, &e.s.built_at[..16.min(e.s.built_at.len())])).font(body(12.0)).color(TEXT2));
                 }
-                ui.label(RichText::new(format!("Import folder: {}", self.import_dir().display())).font(body(11.5)).color(TEXT2));
+                ui.label(RichText::new(format!("Import folder: {}", self.import_dir().display())).font(body(12.0)).color(TEXT2));
                 ui.add_space(30.0);
             });
         });
@@ -716,24 +736,33 @@ fn unused(_: [&str; 6]) {
     let _ = STEPS;
 }
 
-/// Simple vector icons (no icon font needed on device).
 fn draw_icon(ui: &Ui, r: egui::Rect, kind: &str) {
+    draw_icon_col(ui, r, kind, PRIMARY);
+}
+
+/// Simple vector icons (no icon font or emoji needed on device).
+pub fn draw_icon_col(ui: &Ui, r: egui::Rect, kind: &str, colr: Color32) {
     let p = ui.painter();
-    let st = Stroke::new(2.4, PRIMARY);
+    let st = Stroke::new(2.4, colr);
     let c = r.center();
     match kind {
         "list" => {
             for i in 0..3 {
                 let y = r.top() + 7.0 + i as f32 * 7.0;
-                p.circle_filled(egui::pos2(r.left() + 5.0, y), 2.2, PRIMARY);
+                p.circle_filled(egui::pos2(r.left() + 5.0, y), 2.2, colr);
                 p.line_segment([egui::pos2(r.left() + 11.0, y), egui::pos2(r.right() - 2.0, y)], st);
             }
         }
         "grid" => {
             for (dx, dy) in [(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)] {
                 let a = egui::pos2(r.left() + 3.0 + dx * 12.0, r.top() + 3.0 + dy * 12.0);
-                p.rect_filled(egui::Rect::from_min_size(a, Vec2::splat(10.0)), 2.0, PRIMARY);
+                p.rect_filled(egui::Rect::from_min_size(a, Vec2::splat(10.0)), 2.0, colr);
             }
+        }
+        "home" => {
+            let c = r.center();
+            p.add(egui::Shape::convex_polygon(vec![egui::pos2(c.x, r.top() + 1.0), egui::pos2(r.right() - 1.0, c.y - 1.0), egui::pos2(r.left() + 1.0, c.y - 1.0)], Color32::TRANSPARENT, st));
+            p.rect_stroke(egui::Rect::from_min_max(egui::pos2(r.left() + 4.0, c.y - 1.0), egui::pos2(r.right() - 4.0, r.bottom() - 1.0)), 2.0, st, egui::StrokeKind::Middle);
         }
         "compare" => {
             p.line_segment([egui::pos2(r.left() + 3.0, c.y - 5.0), egui::pos2(r.right() - 3.0, c.y - 5.0)], st);
@@ -744,10 +773,10 @@ fn draw_icon(ui: &Ui, r: egui::Rect, kind: &str) {
         _ => {
             for i in 0..8 {
                 let a = i as f32 * std::f32::consts::TAU / 8.0;
-                p.line_segment([c + Vec2::angled(a) * 8.0, c + Vec2::angled(a) * 12.5], Stroke::new(3.5, PRIMARY));
+                p.line_segment([c + Vec2::angled(a) * 8.0, c + Vec2::angled(a) * 12.5], Stroke::new(3.5, colr));
             }
             p.circle_stroke(c, 7.5, st);
-            p.circle_filled(c, 2.5, PRIMARY);
+            p.circle_filled(c, 2.5, colr);
         }
     }
 }

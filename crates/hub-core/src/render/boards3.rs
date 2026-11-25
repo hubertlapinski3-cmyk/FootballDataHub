@@ -2,7 +2,7 @@
 //! finishing, press triggers, progression scatter, funnel, entry routes,
 //! competition context scatters, player cards.
 
-use super::boards1::{side_tag, shot_r, H, W};
+use super::boards1::{shot_r, shot_tip, side_tag, H, W};
 use super::boards2::kde;
 use super::frame::*;
 use super::pitch::*;
@@ -29,6 +29,9 @@ pub fn xt_heatmap(c: &Ctx, sd: Side) -> Board {
             let x0 = row as f64 / 12.0 * 105.0;
             let y0 = col as f64 / 8.0 * 68.0;
             let fill = c.th.seq(sd, v / top);
+            if v > 0.0 {
+                s.tip = Some(format!("xT added from this square: {v:.3}"));
+            }
             p.zone(&mut s, x0, x0 + 105.0 / 12.0, y0, y0 + 8.5, &fill, 1.0);
             if v >= 0.05 {
                 let (cx, cy) = p.p(x0 + 105.0 / 24.0, y0 + 4.25);
@@ -125,12 +128,20 @@ pub fn gk_frames(c: &Ctx) -> Board {
             };
             let (x, y) = (pu(u.clamp(-1.75, 1.75)), pz(z.clamp(0.02, 1.85)));
             let r = 4.0 + 10.0 * sh.xg.sqrt();
+            s.tip = Some(shot_tip(c, e));
+            s.layer = Some(match sh.outcome {
+                ShotOutcome::Goal => "GOAL",
+                ShotOutcome::Saved => "SAVED",
+                ShotOutcome::Woodwork => "WOODWORK",
+                _ => "OFF TARGET",
+            }.to_string());
             match sh.body {
                 Body::Head => s.triangle(x, y, r + 1.0, fill, "none", 0.0),
                 Body::Left => s.square(x, y, r * 0.8, fill, "none", 0.0),
                 _ => s.circle(x, y, r, fill, "none", 0.0, ""),
             }
         }
+        s.layer = None;
         let tiles = [
             ("FACED", g.on_target.to_string()),
             ("SAVES", g.saves.to_string()),
@@ -279,6 +290,7 @@ pub fn chance_vs_finishing(c: &Ctx) -> Board {
         let e = &c.m.events[*q];
         s.t(dx0 - 12.0, y + 5.0, &format!("{} {}", c.pname(*sd, e.player), e.label_minute()), 13.0, 600, c.col(*sd), Anchor::End);
         let (a1, a2) = (dx0 + xg / dmax * dw, dx0 + ps / dmax * dw);
+        s.tip = Some(format!("{} · chance {:.2} xG → struck {:.2} PSxG", shot_tip(c, e), xg, ps));
         s.line(a1, y, a2, y, c.col(*sd), 2.5, "");
         s.circle(a1, y, 6.0, "#0b0a12", c.col(*sd), 2.0, "");
         if *goal {
@@ -376,6 +388,7 @@ pub fn progression_scatter(c: &Ctx) -> Board {
     for (i, p) in el.iter().enumerate() {
         let (x, y) = (px(xs[i]), py(ys[i]));
         let sd = p.side.unwrap();
+        s.tip = Some(format!("{} · {} progressive actions · {:.2} inferred xA · {:.0} min", p.name, xs[i], ys[i], p.minutes));
         if sd == Side::Home {
             s.circle(x, y, 8.0, c.col(sd), "#000", 1.0, "");
         } else {
@@ -414,6 +427,7 @@ pub fn funnel(c: &Ctx) -> Board {
             let f = &c.a.t(sd).funnel;
             let w = f[i] as f64 / mx * 460.0;
             let (x, anchor, tx) = if sd == Side::Home { (cx - 120.0 - w, Anchor::End, cx - 130.0 - w) } else { (cx + 120.0, Anchor::Start, cx + 130.0 + w) };
+            s.tip = Some(format!("{} · {}: {}", c.name(sd), l, f[i]));
             s.rect(x, y, w.max(2.0), 60.0, c.col(sd), "");
             s.h(tx, y + 42.0, &f[i].to_string(), 28.0, theme::TEXT, anchor);
             if i < 4 {
@@ -444,6 +458,7 @@ pub fn entry_routes(c: &Ctx) -> Board {
             s.t(x0 - 14.0, y + 5.0, lab, 14.0, 500, theme::TEXT, Anchor::End);
             s.line(x0, y, x0 + all as f64 / mx * w, y, "#8d8b98", 4.0, "");
             s.circle(x0 + all as f64 / mx * w, y, 9.0, "#cfcdd8", "none", 0.0, "");
+            s.tip = Some(format!("{} · {} lane: {} entries, {} followed by a shot", c.name(*sd), lab, all, sh));
             s.square(x0 + sh as f64 / mx * w, y, 8.0, c.col(*sd), "none", 0.0);
             s.t(x0 + sh as f64 / mx * w, y - 18.0, &format!("{} shot{} · {:.0}%", sh, if sh == 1 { "" } else { "s" }, if all > 0 { sh as f64 / all as f64 * 100.0 } else { 0.0 }), 13.0, 600, theme::TEXT, Anchor::Middle);
             s.t(x0 + all as f64 / mx * w + 14.0, y + 24.0, &format!("{all} entr{}", if all == 1 { "y" } else { "ies" }), 13.0, 500, theme::TEXT, Anchor::Start);
@@ -494,7 +509,10 @@ fn context_scatter(c: &Ctx, rows: &[TeamMatchRow], id: &str, title: &str, sub: &
         let side = names.iter().position(|n| *n == r.team).map(|k| if k == 0 { Side::Home } else { Side::Away });
         match side {
             Some(sd) => later.push((px(xs[i]), py(ys[i]), sd, r.match_id == c.m.id)),
-            None => s.circle(px(xs[i]), py(ys[i]), 4.5, "#8d8b98", "none", 0.0, r#"opacity="0.7""#),
+            None => {
+                s.tip = Some(format!("{} v {} · {} · {:.1}, {:.1}", r.team, r.opponent, r.date, xs[i], ys[i]));
+                s.circle(px(xs[i]), py(ys[i]), 4.5, "#8d8b98", "none", 0.0, r#"opacity="0.7""#);
+            }
         }
     }
     for (x, y, sd, this) in later {
@@ -640,6 +658,7 @@ pub fn player_card(c: &Ctx, p: &PlayerStats) -> Board {
         };
         s.path(&wedge(r1), "#16121c", "#2a2633", 1.0, "");
         let rr = r0 + (r1 - r0) * pcts[i] / 100.0;
+        s.tip = Some(format!("{}: {} · percentile {:.0} (pool average {:.0})", ms[i].label.to_lowercase(), ms[i].display, pcts[i], pool_avg[i]));
         s.path(&wedge(rr), &col, "none", 0.0, r#"opacity="0.9""#);
         let ra = r0 + (r1 - r0) * pool_avg[i] / 100.0;
         let pts: Vec<(f64, f64)> = (0..=12).map(|k| {

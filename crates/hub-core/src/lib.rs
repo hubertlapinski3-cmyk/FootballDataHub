@@ -42,11 +42,12 @@ pub struct BuildOptions {
     pub creator: String,
     pub store_path: Option<PathBuf>,
     pub logo: Option<PathBuf>,
+    pub relay: Option<sources::whoscored::Relay>,
 }
 
 impl Default for BuildOptions {
     fn default() -> Self {
-        BuildOptions { cache_dir: PathBuf::from(".hub_cache"), online: true, overrides: None, creator: "Data Hub".into(), store_path: None, logo: None }
+        BuildOptions { cache_dir: PathBuf::from(".hub_cache"), online: true, overrides: None, creator: "Data Hub".into(), store_path: None, logo: None, relay: None }
     }
 }
 
@@ -88,16 +89,16 @@ fn fetch_crest(url: &str, cache: &Path, key: &str) -> Option<PathBuf> {
     Some(p)
 }
 
-pub fn load_match(input: &Input, opts: &BuildOptions) -> Result<Match> {
+pub fn load_match(input: &Input, opts: &BuildOptions, progress: &mut dyn FnMut(&str)) -> Result<Match> {
     match input {
-        Input::WhoScored(s) => sources::whoscored::load(s, &opts.cache_dir),
+        Input::WhoScored(s) => sources::whoscored::load(s, &opts.cache_dir, if opts.online { opts.relay.as_ref() } else { None }, progress),
         Input::StatsBomb(root, id) => sources::statsbomb::load(root, *id),
     }
 }
 
 pub fn build(input: &Input, opts: &BuildOptions, models: &ml::Models, progress: Progress) -> Result<BuildOutput> {
     progress("ingest", 0.05);
-    let mut m = load_match(input, opts).context("ingest")?;
+    let mut m = load_match(input, opts, &mut |msg: &str| progress(&format!("ingest: {msg}"), 0.05)).context("ingest")?;
     progress("enrich", 0.15);
     sources::enrich::enrich(&mut m, &opts.cache_dir, opts.online);
     let ov = theme::load_overrides(opts.overrides.as_deref());
@@ -189,6 +190,7 @@ pub fn write_output(out: &BuildOutput, dir: &Path, png: bool) -> Result<()> {
     std::fs::create_dir_all(&bdir)?;
     for b in &out.boards {
         std::fs::write(bdir.join(format!("{}.svg", b.id)), &b.svg)?;
+        std::fs::write(bdir.join(format!("{}.scene.json", b.id)), &b.scene)?;
         if png {
             render::save_png(&b.svg, &bdir.join(format!("{}.png", b.id)), 1.0)?;
         }

@@ -1,7 +1,7 @@
 //! Boards 11-20: defensive activity, high regains, high turnovers, PPDA timeline,
 //! momentum, game state, VAEP, dominating zones, transitions, match statistics.
 
-use super::boards1::{side_tag, H, W};
+use super::boards1::{shot_tip, side_tag, H, W};
 use super::frame::*;
 use super::pitch::*;
 use super::svg::*;
@@ -77,6 +77,7 @@ pub fn defensive_activity(c: &Ctx, sd: Side) -> Board {
         for &q in idx.iter() {
             let e = &ev[q];
             let (x, y) = p.p(e.x, e.y);
+            s.tip = Some(format!("{} {} · {:?} · {:.0} m from own goal", c.pname(e.side, e.player), e.label_minute(), e.kind, e.x));
             match e.kind {
                 Kind::Recovery => s.circle(x, y, 4.5, "#ffffff", "none", 0.0, ""),
                 Kind::Tackle => s.triangle(x, y, 6.0, "#facc15", "none", 0.0),
@@ -116,6 +117,12 @@ pub fn high_regains(c: &Ctx, sd: Side) -> Board {
     for r in &t.high_regains {
         let e = &c.m.events[r.idx];
         let (x, y) = p.p(e.x, e.y);
+        s.layer = Some(match r.outcome {
+            RegainOutcome::Nothing => "Nothing followed",
+            RegainOutcome::Box => "Reached the box",
+            RegainOutcome::Shot => "Led to a shot",
+        }.to_string());
+        s.tip = Some(format!("{} {} · {:?}{}{}", c.pname(e.side, e.player), e.label_minute(), e.kind, r.trigger.map(|t| format!(" after {t}")).unwrap_or_default(), if r.xg > 0.0 { format!(" · {:.2} xG followed", r.xg) } else { String::new() }));
         match r.outcome {
             RegainOutcome::Nothing => s.circle(x, y, 6.0, "#8d8b98", "none", 0.0, ""),
             RegainOutcome::Box => s.square(x, y, 7.0, &col, "none", 0.0),
@@ -125,6 +132,7 @@ pub fn high_regains(c: &Ctx, sd: Side) -> Board {
             }
         }
     }
+    s.layer = None;
     let mut lx = 80.0;
     lx = legend_item(&mut s, lx, 1020.0, "circle", "#8d8b98", &format!("Nothing followed ({nothing})"));
     lx = legend_item(&mut s, lx, 1020.0, "square", &col, &format!("Reached the box ({boxn})"));
@@ -166,6 +174,10 @@ pub fn high_turnovers(c: &Ctx) -> Board {
         for to in &t.high_turnovers {
             let e = &ev[to.idx];
             let (x, y) = p.p(e.x, e.y);
+            s.tip = Some(match to.shot {
+                Some(q) => format!("{} {} · turnover won → shot {}", c.pname(e.side, e.player), e.label_minute(), shot_tip(c, &ev[q])),
+                None => format!("{} {} · turnover won, no shot", c.pname(e.side, e.player), e.label_minute()),
+            });
             match to.shot {
                 Some(q) => {
                     let se = &ev[q];
@@ -254,6 +266,7 @@ pub fn ppda_timeline(c: &Ctx) -> Board {
         let line: Vec<(f64, f64)> = pts.iter().map(|(i, v)| (px(*i), py(*v))).collect();
         s.polyline(&line, &col, 3.5, "");
         for (i, v) in &pts {
+            s.tip = Some(format!("{} · {} · PPDA {:.1}", c.name(sd), bins[*i].0, v));
             s.circle(px(*i), py(*v), 7.0, &col, "#000", 1.0, "");
             let dy = if sd == Side::Home { -14.0 } else { 24.0 };
             s.t(px(*i), py(*v) + dy, &format!("{v:.1}"), 13.0, 800, &col, Anchor::Middle);
@@ -302,6 +315,7 @@ pub fn momentum(c: &Ctx) -> Board {
     for (side, e) in c.m.goals_timeline() {
         let x = px(e.t / 60.0);
         let y = if side == Side::Home { mid - 6.0 } else { mid + 6.0 };
+        s.tip = Some(shot_tip(c, e));
         s.circle(x, y, 8.0, c.col(side), "#fff", 2.0, "");
         let og = e.shot.as_ref().unwrap().own_goal;
         let lab = format!("{} {}{}", c.pname(e.side, e.player), e.label_minute(), if og { " (OG)" } else { "" });
@@ -438,6 +452,7 @@ pub fn vaep(c: &Ctx) -> Board {
         let (sx, sy) = p.p(x, y);
         let tot = pl.vaep_off + pl.vaep_def;
         let r = 6.0 + 26.0 * (tot.max(0.0) / mx).sqrt();
+        s.tip = Some(format!("{} · VAEP {} (attack {}, defence {}) · {:.0} min", pl.name, signed(tot, 2), signed(pl.vaep_off, 2), signed(pl.vaep_def, 2), pl.minutes));
         s.circle(sx, sy, r, c.col(sd), "none", 0.0, r#"opacity="0.85""#);
         let given: f64 = -(pl.vaep_off.min(0.0) + pl.vaep_def.min(0.0));
         if given > 0.02 {
@@ -492,6 +507,7 @@ pub fn zones(c: &Ctx) -> Board {
             let x1 = (r + 1) as f64 / rows as f64 * 105.0;
             let ya = 68.0 - (cidx + 1) as f64 / 5.0 * 68.0;
             let yb = 68.0 - cidx as f64 / 5.0 * 68.0;
+            s.tip = Some(format!("{} share minus {} share: {}{:.0} points", c.name(Side::Home), c.name(Side::Away), if *v >= 0.0 { "+" } else { "" }, v));
             p.zone(&mut s, x0, x1, ya, yb, &c.th.div(v / 60.0), 1.0);
             let (cx, cy) = p.p((x0 + x1) / 2.0, (ya + yb) / 2.0);
             s.t(cx, cy + 6.0, &format!("{}{:.0}", if *v >= 0.0 { "+" } else { "" }, v), 17.0, 800, theme::TEXT, Anchor::Middle);
@@ -555,6 +571,7 @@ pub fn transitions(c: &Ctx) -> Board {
             let (a1, b1) = p.p(tr.start.0, tr.start.1);
             let (a2, b2) = p.p(tr.adv.0, tr.adv.1);
             let lc = if tr.goal { "#ffffff" } else { col.as_str() };
+            s.tip = Some(format!("Transition → shot · {:.2} xG{}{}", tr.xg, if tr.goal { " · goal" } else { "" }, if tr.box_entry { " · box entry" } else { "" }));
             s.arrow(a1, b1, a2, b2, lc, 2.2, 9.0, "");
             s.square(a1, b1, 3.5, lc, "none", 0.0);
         }

@@ -222,7 +222,7 @@ pub fn ensure_sample(root: &Path) -> Result<PathBuf> {
     Ok(sb)
 }
 
-pub fn build_match(root: &Path, src: Source, online: bool, state: Shared) -> Result<String> {
+pub fn build_match(root: &Path, src: Source, online: bool, relay: Option<matchhub::sources::whoscored::Relay>, state: Shared) -> Result<String> {
     let models = matchhub::embedded_models();
     let input = match src {
         Source::WhoScored(s) => matchhub::Input::WhoScored(s),
@@ -236,6 +236,7 @@ pub fn build_match(root: &Path, src: Source, online: bool, state: Shared) -> Res
         creator: "Data Hub".into(),
         store_path: Some(root.join("cache").join("team_match.jsonl")),
         logo: None,
+        relay,
     };
     let st = state.clone();
     let mut progress = move |step: &str, f: f32| {
@@ -316,13 +317,13 @@ pub fn build_match(root: &Path, src: Source, online: bool, state: Shared) -> Res
     Ok(s.id)
 }
 
-pub fn spawn_build(root: PathBuf, src: Source, online: bool, state: Shared, ctx: egui::Context) {
+pub fn spawn_build(root: PathBuf, src: Source, online: bool, relay: Option<matchhub::sources::whoscored::Relay>, state: Shared, ctx: egui::Context) {
     {
         let mut g = state.lock().unwrap();
         *g = BuildState { running: true, step: "queued".into(), ..Default::default() };
     }
     std::thread::spawn(move || {
-        let r = build_match(&root, src, online, state.clone());
+        let r = build_match(&root, src, online, relay, state.clone());
         let mut g = state.lock().unwrap();
         g.running = false;
         match r {

@@ -48,6 +48,10 @@ impl App {
                             if let Some(Screen::Viewer { board: b, .. }) = self.stack.last_mut() {
                                 *b = id.clone();
                             }
+                            let now = self.now;
+                            self.viewer.hidden.clear();
+                            self.viewer.selected = None;
+                            self.viewer.opened_at = now;
                         }
                     }
                 });
@@ -59,7 +63,7 @@ impl App {
                 e.s.fallbacks.iter().find(|f| f.contains("unavailable") || f.contains("skipped")).cloned()
             };
             if let Some(n) = note {
-                ui.label(RichText::new(format!("Note: {n}")).font(body(10.5)).color(DARK_TEXT2));
+                ui.label(RichText::new(format!("Note: {n}")).font(body(12.0)).color(DARK_TEXT2));
             }
         });
         // ---- board canvas
@@ -96,32 +100,60 @@ impl App {
         let max_pan = ((size - canvas.size()) / 2.0).max(Vec2::ZERO);
         self.viewer.pan = self.viewer.pan.clamp(-max_pan, max_pan);
         let rect = Rect::from_center_size(canvas.center() + self.viewer.pan, size);
-        // pick raster scale for the current zoom: re-rasterise sharper when zoomed in
-        let px_per_pt = ui.ctx().pixels_per_point();
-        let want = (size.x * px_per_pt / meta.width as f32).clamp(0.3, 3.0);
-        let scale = if want <= 0.75 { 0.75 } else if want <= 1.5 { 1.5 } else { 3.0 };
-        let path = self.board_path(m, board);
-        let tex = self.raster.get(path.clone(), scale).or_else(|| self.raster.get(path.clone(), 0.75)).or_else(|| self.raster.get(path, 0.22));
-        let painter = ui.painter().with_clip_rect(canvas);
-        match tex {
-            Some(t) => {
-                painter.image(t.id(), rect, Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), Color32::WHITE);
+        // native vector board: crisp at any zoom, tappable marks and legend
+        let sc = self.scenes.get(&self.scene_path(m, board));
+        let crests = self.crest_ids(ui.ctx(), m);
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(canvas));
+        child.set_clip_rect(canvas);
+        match &sc {
+            Some(sc) => {
+                let anim = if self.prefs.reduced_motion { None } else { Some((self.now - self.viewer.opened_at) as f32) };
+                crate::scene::paint(&child, rect, sc, &crate::scene::PaintOpts { anim, hidden: Some(&self.viewer.hidden), selected: self.viewer.selected.map(|s| s.0), thumb: false, crests });
+                if resp.clicked() {
+                    if let Some(pos) = resp.interact_pointer_pos() {
+                        match crate::scene::hit(rect, sc, pos, &self.viewer.hidden) {
+                            crate::scene::Hit::Legend(l) => {
+                                if !self.viewer.hidden.remove(&l) {
+                                    self.viewer.hidden.insert(l);
+                                }
+                                self.viewer.selected = None;
+                            }
+                            crate::scene::Hit::Mark(i, t) => {
+                                self.viewer.selected = if self.viewer.selected.map(|s| s.0) == Some(i) { None } else { Some((i, t)) };
+                            }
+                            crate::scene::Hit::None => self.viewer.selected = None,
+                        }
+                    }
+                }
+                // desktop hover preview
+                let mut shown = false;
+                if let Some((i, t)) = self.viewer.selected {
+                    if let (Some(a), Some(txt)) = (crate::scene::mark_anchor(rect, sc, i), sc.tips.get(t as usize)) {
+                        crate::scene::tooltip(&child, a, txt, canvas);
+                        shown = true;
+                    }
+                }
+                if !shown && !ui.input(|i| i.any_touches()) {
+                    if let Some(pos) = resp.hover_pos() {
+                        if let crate::scene::Hit::Mark(i, t) = crate::scene::hit(rect, sc, pos, &self.viewer.hidden) {
+                            if let (Some(a), Some(txt)) = (crate::scene::mark_anchor(rect, sc, i), sc.tips.get(t as usize)) {
+                                crate::scene::tooltip(&child, a, txt, canvas);
+                            }
+                        }
+                    }
+                }
             }
             None => {
-                // skeleton with derivation steps
-                painter.rect_filled(rect, 8.0, Color32::from_rgb(0x15, 0x10, 0x1e));
-                for (i, s) in ["parsing SVG", "laying out text", "rasterising"].iter().enumerate() {
-                    painter.text(rect.center() + Vec2::new(0.0, -20.0 + i as f32 * 20.0), egui::Align2::CENTER_CENTER, *s, body(12.0), DARK_TEXT2);
-                }
+                child.painter().rect_filled(rect, 8.0, Color32::from_rgb(0x15, 0x10, 0x1e));
+                child.painter().text(rect.center(), egui::Align2::CENTER_CENTER, "Board data missing: rebuild this match", body(13.0), DARK_TEXT2);
             }
         }
         // ---- how-to-read footer (always visible)
         let foot = Rect::from_min_max(egui::pos2(full.left(), full.bottom() - 70.0), full.max);
         let mut fu = ui.new_child(egui::UiBuilder::new().max_rect(foot.shrink2(Vec2::new(12.0, 6.0))));
-        fu.label(RichText::new(&meta.how).font(body(11.5)).color(DARK_TEXT2));
-        if self.viewer.zoom > 1.01 {
-            fu.label(RichText::new(format!("{:.1}× · double-tap to fit", self.viewer.zoom)).font(body(10.0)).color(SECONDARY));
-        }
+        fu.label(RichText::new(&meta.how).font(body(12.0)).color(DARK_TEXT2));
+        let hint = if self.viewer.zoom > 1.01 { format!("{:.1}× · double-tap to fit · tap marks for details", self.viewer.zoom) } else { "Pinch to zoom · tap a mark for details · tap a legend entry to hide it".to_string() };
+        fu.label(RichText::new(hint).font(body(12.0)).color(SECONDARY));
         // ---- provenance sheet
         if self.viewer.show_manifest {
             self.manifest_sheet(ui, m, board, full);
@@ -146,7 +178,7 @@ impl App {
         });
         ScrollArea::vertical().id_salt("manifest").show(&mut su, |ui| {
             let row = |ui: &mut Ui, k: &str, val: String| {
-                ui.label(RichText::new(k.to_uppercase()).font(bold(10.5)).color(DARK_TEXT2));
+                ui.label(RichText::new(k.to_uppercase()).font(bold(12.0)).color(DARK_TEXT2));
                 ui.label(RichText::new(val).font(body(13.0)).color(WHITE));
             };
             row(ui, "board", v["board"].as_str().unwrap_or(board).to_string());
@@ -158,18 +190,18 @@ impl App {
             }
             row(ui, "sources used", v["sources_used"].as_array().map(|a| a.iter().filter_map(|x| x.as_str()).collect::<Vec<_>>().join(", ")).unwrap_or_default());
             row(ui, "built at", v["built_at"].as_str().unwrap_or("").to_string());
-            ui.label(RichText::new("FALLBACKS").font(bold(10.5)).color(DARK_TEXT2));
+            ui.label(RichText::new("FALLBACKS").font(bold(12.0)).color(DARK_TEXT2));
             for f in v["fallbacks"].as_array().cloned().unwrap_or_default() {
                 ui.label(RichText::new(format!("• {}", f.as_str().unwrap_or(""))).font(body(12.0)).color(WHITE));
             }
-            ui.label(RichText::new("THEME DECISIONS").font(bold(10.5)).color(DARK_TEXT2));
+            ui.label(RichText::new("THEME DECISIONS").font(bold(12.0)).color(DARK_TEXT2));
             for f in v["theme"]["decisions"].as_array().cloned().unwrap_or_default() {
                 ui.label(RichText::new(format!("• {}", f.as_str().unwrap_or(""))).font(body(12.0)).color(WHITE));
             }
-            ui.label(RichText::new("CONSISTENCY GATES").font(bold(10.5)).color(DARK_TEXT2));
+            ui.label(RichText::new("CONSISTENCY GATES").font(bold(12.0)).color(DARK_TEXT2));
             for c in v["checks"].as_array().cloned().unwrap_or_default() {
                 let ok = c["ok"].as_bool().unwrap_or(false);
-                ui.label(RichText::new(format!("{} {}: {}", if ok { "✓" } else { "✗" }, c["name"].as_str().unwrap_or(""), c["detail"].as_str().unwrap_or(""))).font(body(11.5)).color(if ok { SECONDARY } else { Color32::from_rgb(0xff, 0x6b, 0x81) }));
+                ui.label(RichText::new(format!("{} {}: {}", if ok { "✓" } else { "✗" }, c["name"].as_str().unwrap_or(""), c["detail"].as_str().unwrap_or(""))).font(body(12.0)).color(if ok { SECONDARY } else { Color32::from_rgb(0xff, 0x6b, 0x81) }));
             }
         });
     }

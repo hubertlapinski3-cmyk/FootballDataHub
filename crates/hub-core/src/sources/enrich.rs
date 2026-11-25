@@ -132,16 +132,20 @@ fn fotmob(m: &mut Match, cache: &Path) -> Result<()> {
     let v = get_cached(cache, &format!("fotmob/day_{d}.json"), &format!("https://www.fotmob.com/api/data/matches?date={d}"))
         .or_else(|_| get_cached(cache, &format!("fotmob/day_{d}_legacy.json"), &format!("https://www.fotmob.com/api/matches?date={d}")))?;
     let (home, away) = (m.teams[0].name.clone(), m.teams[1].name.clone());
-    let mut best: Option<(f64, u64)> = None;
+    let mut best: Option<(f64, u64, String)> = None;
     for lg in v["leagues"].as_array().cloned().unwrap_or_default() {
         for mt in lg["matches"].as_array().cloned().unwrap_or_default() {
             let s = name_sim(mt["home"]["name"].as_str().unwrap_or(""), &home) + name_sim(mt["away"]["name"].as_str().unwrap_or(""), &away);
-            if s >= 1.2 && best.map(|b| s > b.0).unwrap_or(true) {
-                best = Some((s, mt["id"].as_u64().unwrap_or(0)));
+            if s >= 1.2 && best.as_ref().map(|b| s > b.0).unwrap_or(true) {
+                best = Some((s, mt["id"].as_u64().unwrap_or(0), lg["name"].as_str().unwrap_or("").to_string()));
             }
         }
     }
-    let (_, fid) = best.ok_or_else(|| anyhow!("no FotMob match for {home} v {away} on {d}"))?;
+    let (_, fid, league) = best.ok_or_else(|| anyhow!("no FotMob match for {home} v {away} on {d}"))?;
+    // WhoScored match pages scraped headlessly carry no breadcrumb: take the league name from FotMob
+    if m.competition.is_empty() && !league.is_empty() {
+        m.competition = league;
+    }
     let md = get_cached(cache, &format!("fotmob/match_{fid}.json"), &format!("https://www.fotmob.com/api/data/matchDetails?matchId={fid}"))?;
     let tc = &md["general"]["teamColors"]["darkMode"];
     for (i, k) in ["home", "away"].iter().enumerate() {

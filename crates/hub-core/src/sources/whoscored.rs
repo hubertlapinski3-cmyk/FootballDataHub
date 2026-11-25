@@ -9,30 +9,108 @@ use anyhow::{anyhow, Context, Result};
 use serde_json::Value;
 use std::path::Path;
 
-pub fn load(input: &str, cache_dir: &Path) -> Result<Match> {
+/// GitHub scrape relay: a repository running the `scrape-whoscored` workflow
+/// (headless Chromium via ricardoherediaj/football-analytics-tutorials) that
+/// commits `data/whoscored/<id>.json.gz`.
+#[derive(Debug, Clone)]
+pub struct Relay {
+    /// "owner/repo"
+    pub repo: String,
+    pub branch: String,
+    /// Optional token (stays on the device): needed to trigger the workflow,
+    /// and to read the data when the repository is private.
+    pub token: Option<String>,
+    /// Max seconds to wait for a triggered run.
+    pub wait_secs: u64,
+}
+
+impl Relay {
+    fn auth(&self) -> Option<String> {
+        self.token.as_ref().filter(|t| !t.trim().is_empty()).map(|t| format!("Bearer {}", t.trim()))
+    }
+    fn raw_url(&self, id: &str) -> String {
+        format!("https://raw.githubusercontent.com/{}/{}/data/whoscored/{id}.json.gz", self.repo, self.branch)
+    }
+    /// Try to read an already-scraped match from the relay repository.
+    pub fn fetch(&self, id: &str) -> Option<String> {
+        let auth = self.auth();
+        let mut h: Vec<(&str, &str)> = vec![("Cache-Control", "no-cache")];
+        if let Some(a) = auth.as_deref() {
+            h.push(("Authorization", a));
+        }
+        let (st, body) = crate::net::get(&self.raw_url(id), &h, 30).ok()?;
+        if st != 200 {
+            return None;
+        }
+        crate::net::gunzip_if_needed(&body).ok()
+    }
+    /// Trigger the scrape workflow for a match URL.
+    pub fn dispatch(&self, url: &str) -> Result<()> {
+        let auth = self.auth().ok_or_else(|| anyhow!("relay token not set"))?;
+        let api = format!("https://api.github.com/repos/{}/actions/workflows/scrape-whoscored.yml/dispatches", self.repo);
+        let body = serde_json::json!({ "ref": self.branch, "inputs": { "url": url } }).to_string();
+        let (st, resp) = crate::net::post_json(&api, &[("Authorization", &auth), ("Accept", "application/vnd.github+json"), ("X-GitHub-Api-Version", "2022-11-28")], &body, 30)?;
+        if st != 204 {
+            return Err(anyhow!("GitHub refused the scrape run (HTTP {st}): {}", String::from_utf8_lossy(&resp).chars().take(200).collect::<String>()));
+        }
+        Ok(())
+    }
+}
+
+fn page_url(input: &str, id: &str) -> String {
+    if input.starts_with("http") { input.to_string() } else { format!("https://www.whoscored.com/Matches/{id}/Live") }
+}
+
+/// Load a WhoScored match from a file, the local cache, the scrape relay or the
+/// site itself; if the site bot-walls us and a relay token is set, the relay's
+/// headless-browser workflow is triggered and polled until the data lands.
+pub fn load(input: &str, cache_dir: &Path, relay: Option<&Relay>, progress: &mut dyn FnMut(&str)) -> Result<Match> {
     let p = Path::new(input);
     let raw = if p.exists() {
         let bytes = std::fs::read(p).with_context(|| format!("reading {input}"))?;
-        if bytes.starts_with(&[0x1f, 0x8b]) {
-            use std::io::Read;
-            let mut s = String::new();
-            flate2::read::GzDecoder::new(&bytes[..]).read_to_string(&mut s)?;
-            s
-        } else {
-            String::from_utf8_lossy(&bytes).into_owned()
-        }
+        crate::net::gunzip_if_needed(&bytes)?
     } else {
         let id = match_id_from(input).ok_or_else(|| anyhow!("not a file, id or WhoScored URL: {input}"))?;
         let cached = cache_dir.join("whoscored").join(format!("{id}.json"));
-        if cached.exists() {
+        let blob = if cached.exists() {
             std::fs::read_to_string(&cached)?
         } else {
-            let html = fetch_page(&id)?;
-            let blob = extract_blob(&html)?;
+            let mut got: Option<String> = None;
+            if let Some(r) = relay {
+                progress("checking scrape relay");
+                got = r.fetch(&id);
+            }
+            if got.is_none() {
+                progress("fetching WhoScored");
+                match fetch_page(&id).and_then(|html| extract_blob(&html)) {
+                    Ok(b) => got = Some(b),
+                    Err(direct_err) => match relay {
+                        Some(r) if r.auth().is_some() => {
+                            progress("WhoScored blocked direct access: starting headless scraper on GitHub Actions");
+                            r.dispatch(&page_url(input, &id))?;
+                            let t0 = std::time::Instant::now();
+                            while got.is_none() {
+                                if t0.elapsed().as_secs() > r.wait_secs {
+                                    return Err(anyhow!("scraper run did not deliver match {id} within {} s; check the Actions tab of {}", r.wait_secs, r.repo));
+                                }
+                                std::thread::sleep(std::time::Duration::from_secs(15));
+                                progress(&format!("waiting for scraper run · {} s", t0.elapsed().as_secs()));
+                                got = r.fetch(&id);
+                            }
+                        }
+                        Some(r) => {
+                            return Err(anyhow!("{direct_err:#}. Run the scrape-whoscored workflow in {} (Actions > scrape-whoscored > Run workflow, paste the URL) or add a relay token in Settings so the app can start it.", r.repo));
+                        }
+                        None => return Err(direct_err),
+                    },
+                }
+            }
+            let b = got.unwrap();
             std::fs::create_dir_all(cached.parent().unwrap())?;
-            std::fs::write(&cached, &blob)?;
-            blob
-        }
+            std::fs::write(&cached, &b)?;
+            b
+        };
+        blob
     };
     let is_html = !raw.trim_start().starts_with('{');
     let json_text = if is_html { extract_blob(&raw)? } else { raw.clone() };

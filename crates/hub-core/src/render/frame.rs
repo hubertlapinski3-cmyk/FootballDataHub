@@ -63,9 +63,9 @@ fn code3(n: &str) -> String {
     s.to_uppercase()
 }
 
-fn crest(s: &mut Svg, cx: f64, cy: f64, r: f64, data: &Option<String>, name: &str, col: &str) {
+fn crest(s: &mut Svg, cx: f64, cy: f64, r: f64, data: &Option<String>, name: &str, col: &str, key: &str) {
     match data {
-        Some(href) => s.image(cx - r, cy - r, 2.0 * r, 2.0 * r, href),
+        Some(href) => s.image_keyed(cx - r, cy - r, 2.0 * r, 2.0 * r, href, Some(key)),
         None => {
             s.circle(cx, cy, r, col, "none", 0.0, "");
             let ini: String = name.split_whitespace().filter(|w| w.len() > 2 || name.split_whitespace().count() == 1).take(2).map(|w| w.chars().next().unwrap()).collect::<String>().to_uppercase();
@@ -95,15 +95,17 @@ pub fn header(s: &mut Svg, c: &Ctx, title: &str, subtitle: &str, scope: Scope) {
     while text_w(title, size, true) > max_w && size > 24.0 {
         size -= 2.0;
     }
-    s.h(138.0, 88.0, title, size, theme::TEXT, Anchor::Start);
+    // HighlightText-style headline: team names inside the sentence carry their colours
+    let runs = highlight_runs(title, &[(c.name(Side::Home), c.col(Side::Home).to_string()), (c.short(Side::Home), c.col(Side::Home).to_string()), (c.name(Side::Away), c.col(Side::Away).to_string()), (c.short(Side::Away), c.col(Side::Away).to_string())]);
+    s.text_runs(138.0, 88.0, &runs, size, 700, Anchor::Start, HEAD);
     s.t(138.0, 114.0, subtitle, 13.0, 400, theme::MUTED, Anchor::Start);
     // teams + score
     let rx = w - 60.0;
     let cy = 52.0;
     let hc = c.col(Side::Home).to_string();
     let ac = c.col(Side::Away).to_string();
-    crest(s, rx - 470.0, cy, 20.0, &c.crests[0], &c.name(Side::Home), &hc);
-    crest(s, rx - 20.0, cy, 20.0, &c.crests[1], &c.name(Side::Away), &ac);
+    crest(s, rx - 470.0, cy, 20.0, &c.crests[0], &c.name(Side::Home), &hc, "crest:0");
+    crest(s, rx - 20.0, cy, 20.0, &c.crests[1], &c.name(Side::Away), &ac, "crest:1");
     let hn = fit_name(c.m, Side::Home, 15.0, 112.0);
     let an = fit_name(c.m, Side::Away, 15.0, 112.0);
     s.t(rx - 335.0, cy + 6.0, &hn, 15.0, 800, &hc, Anchor::End);
@@ -154,6 +156,13 @@ pub fn panel(s: &mut Svg, x: f64, y: f64, w: f64, h: f64) {
 }
 
 pub fn legend_item(s: &mut Svg, x: f64, y: f64, kind: &str, col: &str, label: &str) -> f64 {
+    // a legend entry whose key matches a layer becomes a tap-to-toggle control in the app
+    let key = label.split(" (").next().unwrap_or(label).to_string();
+    if s.scene.layers.iter().any(|l| *l == key) {
+        let w = 22.0 + text_w(label, 12.5, false);
+        s.legend_hit(&key, x - 4.0, y - 18.0, w + 8.0, 26.0);
+    }
+    let saved = s.layer.take();
     match kind {
         "circle" => s.circle(x + 6.0, y - 5.0, 6.0, col, "none", 0.0, ""),
         "ring" => s.circle(x + 6.0, y - 5.0, 6.0, "none", col, 2.0, ""),
@@ -167,5 +176,29 @@ pub fn legend_item(s: &mut Svg, x: f64, y: f64, kind: &str, col: &str, label: &s
         _ => {}
     }
     s.t(x + 22.0, y, label, 12.5, 500, theme::TEXT, Anchor::Start);
+    s.layer = saved;
     x + 22.0 + text_w(label, 12.5, false) + 24.0
+}
+
+/// Split `text` into (run, colour) pairs, colouring every occurrence of the given names.
+pub fn highlight_runs(text: &str, names: &[(String, String)]) -> Vec<(String, String)> {
+    let mut out = vec![];
+    let mut rest = text;
+    while !rest.is_empty() {
+        let hit = names.iter().filter(|(n, _)| !n.is_empty()).filter_map(|(n, c)| rest.find(n.as_str()).map(|i| (i, n, c))).min_by(|a, b| a.0.cmp(&b.0).then(b.1.len().cmp(&a.1.len())));
+        match hit {
+            Some((i, n, c)) => {
+                if i > 0 {
+                    out.push((rest[..i].to_string(), theme::TEXT.to_string()));
+                }
+                out.push((n.clone(), c.clone()));
+                rest = &rest[i + n.len()..];
+            }
+            None => {
+                out.push((rest.to_string(), theme::TEXT.to_string()));
+                rest = "";
+            }
+        }
+    }
+    out
 }

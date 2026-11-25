@@ -3,6 +3,7 @@
 
 pub mod library;
 pub mod raster;
+pub mod scene;
 pub mod screens;
 pub mod style;
 
@@ -35,12 +36,48 @@ pub struct Prefs {
     pub onboarded: bool,
     /// Personal-use flag: allows fetching WhoScored/FotMob/SofaScore from this device.
     pub personal_fetch: bool,
+    /// Respect reduced motion: no entrance animations.
+    #[serde(default)]
+    pub reduced_motion: bool,
+    /// GitHub repository running the scrape-whoscored workflow ("owner/repo").
+    #[serde(default = "default_relay")]
+    pub relay_repo: String,
+    /// Token used only to start relay runs / read a private relay repo. Stored in app-private storage.
+    #[serde(default)]
+    pub relay_token: String,
+}
+
+fn default_relay() -> String {
+    "hubertlapinski3-cmyk/FootballDataHub".into()
+}
+
+impl Prefs {
+    pub fn relay(&self) -> Option<matchhub::sources::whoscored::Relay> {
+        let repo = self.relay_repo.trim();
+        if repo.is_empty() || !repo.contains('/') {
+            return None;
+        }
+        Some(matchhub::sources::whoscored::Relay { repo: repo.to_string(), branch: "main".into(), token: Some(self.relay_token.clone()).filter(|t| !t.trim().is_empty()), wait_secs: 480 })
+    }
+    /// Online work is allowed with the personal flag, or when a relay is configured.
+    pub fn online(&self) -> bool {
+        self.personal_fetch || self.relay().is_some()
+    }
 }
 
 pub struct ViewerState {
     pub zoom: f32,
     pub pan: egui::Vec2,
     pub show_manifest: bool,
+    pub hidden: std::collections::HashSet<i32>,
+    pub selected: Option<(usize, i32)>,
+    pub opened_at: f64,
+}
+
+impl ViewerState {
+    pub fn fresh(now: f64) -> ViewerState {
+        ViewerState { zoom: 1.0, pan: egui::Vec2::ZERO, show_manifest: false, hidden: Default::default(), selected: None, opened_at: now }
+    }
 }
 
 pub struct CompareState {
@@ -71,6 +108,11 @@ pub struct App {
     pub open_on_done: bool,
     pub report_cache: Option<(usize, matchhub::narrative::Report)>,
     pub manifest_cache: Option<(usize, serde_json::Value)>,
+    pub scenes: scene::SceneCache,
+    /// time the current screen appeared (drives staggered entrance motion)
+    pub screen_t0: f64,
+    pub now: f64,
+    pub show_token: bool,
 }
 
 impl App {
@@ -93,7 +135,7 @@ impl App {
             build: Default::default(),
             input: String::new(),
             toast: None,
-            viewer: ViewerState { zoom: 1.0, pan: egui::Vec2::ZERO, show_manifest: false },
+            viewer: ViewerState::fresh(0.0),
             compare: CompareState { left: None, right: None, groups: [true; 4], swipe: 0.0, ran: false },
             theme_text,
             crest_tex: Default::default(),
@@ -104,6 +146,10 @@ impl App {
             open_on_done: true,
             report_cache: None,
             manifest_cache: None,
+            scenes: Default::default(),
+            screen_t0: 0.0,
+            now: 0.0,
+            show_token: false,
         }
     }
 
@@ -115,17 +161,34 @@ impl App {
     }
     pub fn push(&mut self, s: Screen) {
         if let Screen::Viewer { .. } = s {
-            self.viewer = ViewerState { zoom: 1.0, pan: egui::Vec2::ZERO, show_manifest: false };
+            self.viewer = ViewerState::fresh(self.now);
         }
         self.stack.push(s);
+        self.screen_t0 = self.now;
     }
     pub fn back(&mut self) {
         if self.stack.len() > 1 {
             self.stack.pop();
+            self.screen_t0 = self.now;
         }
     }
     pub fn go_home(&mut self) {
         self.stack = vec![Screen::Home];
+        self.screen_t0 = self.now;
+    }
+    /// Switch between top-level tabs without growing the back stack.
+    pub fn tab(&mut self, s: Screen) {
+        self.stack = if s == Screen::Home { vec![Screen::Home] } else { vec![Screen::Home, s] };
+        self.screen_t0 = self.now;
+    }
+    /// Staggered entrance (0..1) for list/grid item `i` on the current screen.
+    pub fn stagger(&self, i: usize) -> f32 {
+        if self.prefs.reduced_motion {
+            return 1.0;
+        }
+        let t = ((self.now - self.screen_t0) as f32 - i as f32 * 0.05) / 0.35;
+        let t = t.clamp(0.0, 1.0);
+        1.0 - (1.0 - t).powi(3)
     }
     pub fn toast(&mut self, ctx: &egui::Context, msg: &str) {
         self.toast = Some((msg.to_string(), ctx.input(|i| i.time) + 3.5));
@@ -138,7 +201,11 @@ impl App {
     #[allow(deprecated)]
     pub fn frame(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
+        self.now = ctx.input(|i| i.time);
         self.raster.poll(&ctx);
+        if !self.prefs.reduced_motion && self.now - self.screen_t0 < 1.5 {
+            ctx.request_repaint();
+        }
         let scr = self.screen();
         let dark = scr.dark();
         if self.last_dark != Some(dark) {
@@ -158,6 +225,7 @@ impl App {
             self.lib.reload();
             self.report_cache = None;
             self.manifest_cache = None;
+            self.scenes.clear();
             // indices changed after reload: rebuild the navigation stack
             let base = if self.screen() == Screen::Onboarding { Screen::Onboarding } else { Screen::Home };
             self.stack = vec![base];
@@ -177,7 +245,13 @@ impl App {
             if dark {
                 style::gradient(ui, full, style::BOARD_BG, style::BOARD_BG2);
             }
-            let inner = full.intersect(safe);
+            let mut inner = full.intersect(safe);
+            let top_level = matches!(scr, Screen::Home | Screen::Matches | Screen::Compare | Screen::Settings);
+            if top_level {
+                let nav = egui::Rect::from_min_max(egui::pos2(inner.left(), inner.bottom() - 68.0), inner.max);
+                inner.max.y = nav.top();
+                self.bottom_nav(ui, nav, &scr, dark);
+            }
             let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner));
             match scr {
                 Screen::Onboarding => self.onboarding(&mut child),

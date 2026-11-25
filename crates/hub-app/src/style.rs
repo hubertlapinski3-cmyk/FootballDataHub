@@ -104,6 +104,24 @@ pub fn card(dark: bool) -> Frame {
         .stroke(if dark { Stroke::new(1.0, DARK_LINE) } else { Stroke::NONE })
 }
 
+/// Glass card for dark surfaces: translucent fill, hairline light border.
+pub fn glass() -> Frame {
+    Frame::new()
+        .fill(Color32::from_rgba_unmultiplied(255, 255, 255, 14))
+        .corner_radius(CornerRadius::same(16))
+        .inner_margin(Margin::same(12))
+        .stroke(Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 30)))
+}
+
+/// Pressed-state feedback for custom tappable surfaces (no layout shift).
+pub fn press_overlay(ui: &Ui, r: &egui::Response, radius: f32, dark: bool) {
+    if r.is_pointer_button_down_on() {
+        ui.painter().rect_filled(r.rect, radius, if dark { Color32::from_rgba_unmultiplied(255, 255, 255, 22) } else { Color32::from_rgba_unmultiplied(98, 0, 238, 20) });
+    } else if r.hovered() {
+        ui.painter().rect_stroke(r.rect, radius, Stroke::new(1.0, if dark { Color32::from_rgba_unmultiplied(187, 134, 255, 90) } else { Color32::from_rgba_unmultiplied(98, 0, 238, 60) }), egui::StrokeKind::Inside);
+    }
+}
+
 /// Primary CTA button.
 pub fn cta(ui: &mut Ui, label: &str, enabled: bool) -> bool {
     let btn = egui::Button::new(RichText::new(label).font(semi(16.0)).color(WHITE)).fill(if enabled { PRIMARY } else { Color32::from_gray(160) }).corner_radius(CornerRadius::same(24)).min_size(Vec2::new(0.0, 48.0));
@@ -151,7 +169,7 @@ pub fn definition_chip(ui: &mut Ui, text: &str, dark: bool) {
         .corner_radius(CornerRadius::same(10))
         .inner_margin(Margin::symmetric(8, 4))
         .show(ui, |ui| {
-            ui.label(RichText::new(format!("Definition: {text}")).font(body(11.0)).color(if dark { DARK_TEXT2 } else { TEXT2 }));
+            ui.label(RichText::new(format!("Definition: {text}")).font(body(12.0)).color(if dark { DARK_TEXT2 } else { TEXT2 }));
         });
 }
 

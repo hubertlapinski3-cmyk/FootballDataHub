@@ -16,6 +16,26 @@ pub fn shot_r(xg: f64) -> f64 {
     5.0 + 24.0 * xg.max(0.0).sqrt()
 }
 
+/// Tooltip text for a shot.
+pub fn shot_tip(c: &Ctx, e: &Event) -> String {
+    let sh = e.shot.as_ref().unwrap();
+    let outcome = match sh.outcome {
+        ShotOutcome::Goal => "Goal",
+        ShotOutcome::Saved => "Saved",
+        ShotOutcome::OffTarget => "Off target",
+        ShotOutcome::Woodwork => "Woodwork",
+        ShotOutcome::Blocked => "Blocked",
+    };
+    let body = match sh.body {
+        Body::Right => "right foot",
+        Body::Left => "left foot",
+        Body::Head => "header",
+        Body::Other => "other",
+    };
+    let ps = sh.xgot_ext.or(sh.psxg).map(|v| format!(" · PSxG {v:.2}")).unwrap_or_default();
+    format!("{} {} · {} · {:.2} xG{} · {}{}", c.pname(e.side, e.player), e.label_minute(), outcome, sh.xg, ps, body, if sh.penalty { " · penalty" } else { "" })
+}
+
 fn mins(t: f64) -> String {
     format!("{}'", (t / 60.0).floor() as i64 + 1)
 }
@@ -68,6 +88,8 @@ pub fn xg_flow(c: &Ctx) -> Board {
             let sh = e.shot.as_ref().unwrap();
             let before: f64 = c.a.t(side).shots.iter().take_while(|&&k| k != q).map(|&k| c.m.events[k].shot.as_ref().unwrap().xg).sum();
             let (gx, gy) = (px(e.t / 60.0), py(before + sh.xg));
+            s.tip = Some(shot_tip(c, e));
+            s.circle(gx, gy, 3.5, &col, "none", 0.0, r#"opacity="0.9""#);
             if sh.outcome == ShotOutcome::Goal {
                 s.circle(gx, gy, 8.0, &col, "#fff", 2.0, "");
                 s.t(gx, gy - 14.0, &format!("{} {}", c.pname(side, e.player), e.label_minute()), 12.5, 700, theme::TEXT, Anchor::Middle);
@@ -76,6 +98,18 @@ pub fn xg_flow(c: &Ctx) -> Board {
             }
         }
         s.t(px(dur) + 8.0, py(cum) + 5.0, &format!("{:.2}", cum), 15.0, 800, &col, Anchor::Start);
+    }
+    // drawarrow-style annotation on the single biggest chance
+    let best = Side::both().iter().flat_map(|&sd| c.a.t(sd).shots.iter().map(move |&q| (sd, q))).filter(|(_, q)| !c.m.events[*q].shot.as_ref().unwrap().penalty).max_by(|a, b| c.m.events[a.1].shot.as_ref().unwrap().xg.partial_cmp(&c.m.events[b.1].shot.as_ref().unwrap().xg).unwrap());
+    if let Some((sd, q)) = best {
+        let e = &c.m.events[q];
+        let sh = e.shot.as_ref().unwrap();
+        let before: f64 = c.a.t(sd).shots.iter().take_while(|&&k| k != q).map(|&k| c.m.events[k].shot.as_ref().unwrap().xg).sum();
+        let (gx, gy) = (px(e.t / 60.0), py(before + sh.xg));
+        let (lx, ly) = (gx.clamp(x0 + 160.0, x0 + w - 160.0) - 120.0, (gy - 120.0).max(y0 + 30.0));
+        s.curved_arrow(lx + 110.0, ly + 8.0, gx - 6.0, gy - 8.0, 0.25, "#cfcdd8", 1.6);
+        let runs = vec![("Biggest chance: ".to_string(), theme::MUTED.to_string()), (format!("{} {} · {:.2} xG", c.pname(sd, e.player), e.label_minute(), sh.xg), c.col(sd).to_string())];
+        s.text_runs(lx - 60.0, ly, &runs, 14.0, 700, Anchor::Start, BODY);
     }
     let mut lx = x0;
     lx = legend_item(&mut s, lx, y0 + hh + 60.0, "line", c.col(Side::Home), &c.name(Side::Home));
@@ -143,6 +177,7 @@ pub fn goal_origins(c: &Ctx) -> Vec<Board> {
                     }
                 }
                 if e.kind != Kind::Carry {
+                    s.tip = Some(format!("{}. {} · {:?} · {}'{:02}", num, c.pname(e.side, e.player), e.kind, e.minute, e.second));
                     s.circle(sx, sy, 10.0, "#120d16", &col, 2.0, "");
                     s.t(sx, sy + 4.0, &num.to_string(), 10.5, 700, theme::TEXT, Anchor::Middle);
                     num += 1;
@@ -348,6 +383,7 @@ pub fn shot_anatomy(c: &Ctx) -> Board {
             let fill = if crate::derive::in_six(e.x, e.y) { "#ffffff" } else if crate::derive::in_box(e.x, e.y) { "#3b82f6" } else { "#8d8b98" };
             let (x, y) = p.p(e.x, e.y);
             let r = shot_r(sh.xg) * 0.8;
+            s.tip = Some(shot_tip(c, e));
             if sh.body == Body::Head {
                 s.triangle(x, y, r + 2.0, fill, "none", 0.0);
             } else if sh.first_time {
@@ -397,6 +433,14 @@ pub fn shot_map(c: &Ctx, sd: Side) -> Board {
         let sh = e.shot.as_ref().unwrap();
         let (x, y) = p.p(e.x, e.y);
         let r = shot_r(sh.xg) * 0.6;
+        s.tip = Some(shot_tip(c, e));
+        s.layer = Some(match sh.outcome {
+            ShotOutcome::OffTarget => "Off target",
+            ShotOutcome::Blocked => "Blocked",
+            ShotOutcome::Woodwork => "Woodwork",
+            ShotOutcome::Saved => "Saved",
+            ShotOutcome::Goal => "Goal",
+        }.to_string());
         match sh.outcome {
             ShotOutcome::OffTarget => {
                 s.cross(x, y, r * 0.8, &sem.off_target, 3.0);
@@ -422,6 +466,10 @@ pub fn shot_map(c: &Ctx, sd: Side) -> Board {
         if t.clear_chances.contains(&q) && sh.xg >= 0.2 {
             s.t(x + r + 4.0, y - 4.0, &format!("{:.2}", sh.xg), 12.0, 700, theme::TEXT, Anchor::Start);
         }
+        s.layer = None;
+    }
+    for k in ["Off target", "Blocked", "Woodwork", "Saved", "Goal"] {
+        s.layer_idx(k);
     }
     let mut lx = 80.0;
     let y = 1040.0;
@@ -476,6 +524,8 @@ pub fn box_entries(c: &Ctx, sd: Side) -> Board {
         let (a1, b1) = p.p(e.x, e.y);
         let (a2, b2) = p.p(e.end().0, e.end().1);
         let lc = if en.shot_followed { "#ffffff" } else { col.as_str() };
+        s.layer = Some(if en.shot_followed { "Shot followed" } else { "No shot followed" }.to_string());
+        s.tip = Some(format!("{} {} · {} into the box{}", c.pname(sd, e.player), e.label_minute(), if en.carry { "carry" } else { "pass" }, if en.shot_followed { " · shot followed" } else { "" }));
         if en.shot_followed {
             s.arrow(a1, b1, a2, b2, lc, 2.2, 9.0, "");
         } else {
@@ -486,6 +536,7 @@ pub fn box_entries(c: &Ctx, sd: Side) -> Board {
         } else {
             s.circle(a2, b2, 5.5, lc, "#000", 0.6, "");
         }
+        s.layer = None;
     }
     let (px0, py0) = (960.0, 200.0);
     panel(&mut s, px0, py0, 580.0, 720.0);
@@ -621,6 +672,7 @@ pub fn pass_network(c: &Ctx, sd: Side, half: u8) -> Board {
         let (x1, y1) = p.p(pa.0 / pa.2, pa.1 / pa.2);
         let (x2, y2) = p.p(pb.0 / pb.2, pb.1 / pb.2);
         let w = 1.0 + 9.0 * (*n as f64 / maxp);
+        s.tip = Some(format!("{} ↔ {} · {} completed passes", c.pname(sd, Some(*a)), c.pname(sd, Some(*b)), n));
         s.line(x1, y1, x2, y2, "#b9b6c8", w, &format!(r#"opacity="{:.2}" stroke-linecap="round""#, 0.25 + 0.6 * (*n as f64 / maxp)));
     }
     // replacement dotted lines
@@ -640,6 +692,7 @@ pub fn pass_network(c: &Ctx, sd: Side, half: u8) -> Board {
         let r = 14.0 + 10.0 * (v.2 / maxt).sqrt();
         let came_on = !pl.starter && pl.on_t >= h0 - 1.0 && pl.on_t <= h1;
         let went_off = pl.off_t.map(|o| o >= h0 && o <= h1 + 1.0).unwrap_or(false);
+        s.tip = Some(format!("#{} {} · {:.0} touches this half{}{}", pl.shirt, pl.name, v.2, if came_on { " · came on" } else { "" }, if went_off { " · went off" } else { "" }));
         if came_on {
             s.square(x, y, r * 0.85, &col, "#ffffff", 1.5);
         } else if went_off {

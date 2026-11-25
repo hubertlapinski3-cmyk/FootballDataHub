@@ -48,6 +48,12 @@ enum Cmd {
         creator: String,
         #[arg(long)]
         models: Option<PathBuf>,
+        /// GitHub repo running the scrape-whoscored workflow, e.g. owner/FootballDataHub
+        #[arg(long)]
+        relay: Option<String>,
+        /// Token for triggering the relay (read from env DATAHUB_RELAY_TOKEN; never pass on the command line)
+        #[arg(long, default_value = "main")]
+        relay_branch: String,
     },
     /// Fill the competition store from every StatsBomb match of a season
     Season {
@@ -86,7 +92,7 @@ fn main() -> Result<()> {
             std::fs::write(&out, serde_json::to_string(&models)?)?;
             eprintln!("wrote {}", out.display());
         }
-        Cmd::Build { whoscored, statsbomb, sb_root, out, theme_override, cache, store, offline, no_png, creator, models } => {
+        Cmd::Build { whoscored, statsbomb, sb_root, out, theme_override, cache, store, offline, no_png, creator, models, relay, relay_branch } => {
             let input = match (whoscored, statsbomb) {
                 (Some(w), _) => Input::WhoScored(w),
                 (None, Some(id)) => Input::StatsBomb(sb_root.expect("--sb-root required"), id),
@@ -96,7 +102,8 @@ fn main() -> Result<()> {
                 Some(p) => serde_json::from_str(&std::fs::read_to_string(p)?)?,
                 None => embedded_models(),
             };
-            let opts = BuildOptions { cache_dir: cache, online: !offline, overrides: theme_override, creator, store_path: Some(store), logo: None };
+            let relay = relay.map(|repo| sources::whoscored::Relay { repo, branch: relay_branch, token: std::env::var("DATAHUB_RELAY_TOKEN").ok(), wait_secs: 480 });
+            let opts = BuildOptions { cache_dir: cache, online: !offline, overrides: theme_override, creator, store_path: Some(store), logo: None, relay };
             let t0 = std::time::Instant::now();
             let o = build(&input, &opts, &models, &mut |s, f| eprintln!("[{:>3.0}%] {s}", f * 100.0))?;
             write_output(&o, &out, !no_png)?;

@@ -35,3 +35,26 @@ pub fn get_ok(url: &str, headers: &[(&str, &str)], timeout: u64) -> Result<Vec<u
 pub fn get_text(url: &str, headers: &[(&str, &str)], timeout: u64) -> Result<String> {
     Ok(String::from_utf8_lossy(&get_ok(url, headers, timeout)?).into_owned())
 }
+
+/// POST a JSON body; returns (status, body).
+pub fn post_json(url: &str, headers: &[(&str, &str)], body: &str, timeout: u64) -> Result<(u16, Vec<u8>)> {
+    let mut req = agent(timeout).post(url).header("User-Agent", UA).header("Content-Type", "application/json");
+    for (k, v) in headers {
+        req = req.header(*k, *v);
+    }
+    let mut resp = req.send(body).map_err(|e| anyhow!("POST {url}: {e}"))?;
+    let status = resp.status().as_u16();
+    let mut buf = vec![];
+    resp.body_mut().with_config().limit(8 * 1024 * 1024).reader().read_to_end(&mut buf)?;
+    Ok((status, buf))
+}
+
+pub fn gunzip_if_needed(bytes: &[u8]) -> Result<String> {
+    if bytes.starts_with(&[0x1f, 0x8b]) {
+        let mut s = String::new();
+        flate2::read::GzDecoder::new(bytes).read_to_string(&mut s)?;
+        Ok(s)
+    } else {
+        Ok(String::from_utf8_lossy(bytes).into_owned())
+    }
+}

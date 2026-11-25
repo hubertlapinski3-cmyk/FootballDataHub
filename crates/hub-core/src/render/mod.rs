@@ -23,13 +23,17 @@ pub struct Board {
     pub height: f64,
     #[serde(skip)]
     pub svg: String,
+    /// JSON vector scene for native, interactive rendering in the app
+    #[serde(skip)]
+    pub scene: String,
 }
 
 impl Board {
     pub fn new(id: &str, title: &str, s: svg::Svg) -> Board {
         let (w, h) = (s.w, s.h);
         let how = s.how.clone();
-        Board { id: id.to_string(), title: title.to_string(), section: section_of(id).into(), how, width: w, height: h, svg: s.finish(crate::theme::BG) }
+        let scene = serde_json::to_string(&s.scene).unwrap_or_default();
+        Board { id: id.to_string(), title: title.to_string(), section: section_of(id).into(), how, width: w, height: h, svg: s.finish(crate::theme::BG), scene }
     }
 }
 
