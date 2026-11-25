@@ -1,0 +1,192 @@
+//! Screen 4: full-screen board viewer with pinch-zoom, pan, double-tap to fit,
+//! scope switcher, how-to-read line, export and provenance sheet.
+
+use super::scope_variants;
+use crate::style::*;
+use crate::{App, Screen};
+use egui::{Align, Color32, Layout, Rect, RichText, ScrollArea, Sense, Stroke, Ui, Vec2};
+
+impl App {
+    pub fn board_viewer(&mut self, ui: &mut Ui, m: usize, board: &str) {
+        if m >= self.lib.entries.len() {
+            self.go_home();
+            return;
+        }
+        let e = self.lib.entries[m].clone();
+        let Some(meta) = e.s.boards.iter().find(|b| b.id == board).cloned() else {
+            self.back();
+            return;
+        };
+        let full = ui.max_rect();
+        // ---- chrome top
+        let mut top = ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_size(full.min, Vec2::new(full.width(), 132.0))));
+        egui::Frame::new().inner_margin(egui::Margin::symmetric(10, 2)).show(&mut top, |ui| {
+            ui.horizontal(|ui| {
+                if ui.add(egui::Button::new(RichText::new("←").font(bold(22.0)).color(WHITE)).fill(Color32::TRANSPARENT).min_size(Vec2::splat(44.0))).clicked() {
+                    self.back();
+                }
+                ui.label(RichText::new(&meta.title).font(head(22.0)).color(WHITE));
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if ui.add(egui::Button::new(RichText::new("Info").font(semi(14.0)).color(PRIMARY_ON_DARK)).fill(Color32::TRANSPARENT).min_size(Vec2::splat(44.0))).on_hover_text("Provenance").clicked() {
+                        self.viewer.show_manifest = !self.viewer.show_manifest;
+                    }
+                    if ui.add(egui::Button::new(RichText::new("Export").font(semi(14.0)).color(PRIMARY_ON_DARK)).fill(Color32::TRANSPARENT).min_size(Vec2::splat(44.0))).on_hover_text("Export PNG").clicked() {
+                        self.export_board(ui.ctx(), m, board);
+                    }
+                });
+            });
+            ScrollArea::horizontal().id_salt("scopes").show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    let vars = scope_variants(&e, board);
+                    let has_full = vars.iter().any(|v| v.0 == "FULL MATCH");
+                    if !has_full {
+                        let _ = chip(ui, "FULL MATCH", false, true);
+                    }
+                    for (label, id) in vars {
+                        let active = id == board && !(label.ends_with("HALF") && false);
+                        if chip(ui, &label, active, true) && id != board {
+                            if let Some(Screen::Viewer { board: b, .. }) = self.stack.last_mut() {
+                                *b = id.clone();
+                            }
+                        }
+                    }
+                });
+            });
+            // subdued fallback notice
+            let note = if board.starts_with("22_") || board.starts_with("24_") {
+                Some("PSxG from the local placement model where no xGOT was fetched: no shot velocity or keeper position.".to_string())
+            } else {
+                e.s.fallbacks.iter().find(|f| f.contains("unavailable") || f.contains("skipped")).cloned()
+            };
+            if let Some(n) = note {
+                ui.label(RichText::new(format!("Note: {n}")).font(body(10.5)).color(DARK_TEXT2));
+            }
+        });
+        // ---- board canvas
+        let canvas = Rect::from_min_max(egui::pos2(full.left(), full.top() + 132.0), egui::pos2(full.right(), full.bottom() - 70.0));
+        let resp = ui.interact(canvas, ui.scope_id().with("canvas"), Sense::click_and_drag());
+        let aspect = (meta.height / meta.width) as f32;
+        let fit_w = canvas.width().min(canvas.height() / aspect);
+        // pinch / ctrl-scroll zoom, drag to pan, double tap to fit
+        let (zoom_delta, multi) = ui.input(|i| (i.zoom_delta(), i.multi_touch()));
+        if resp.hovered() || multi.is_some() {
+            let z = (self.viewer.zoom * zoom_delta).clamp(1.0, 5.0);
+            if (z - self.viewer.zoom).abs() > 1e-4 {
+                if let Some(p) = ui.input(|i| i.pointer.hover_pos()) {
+                    let c = canvas.center() + self.viewer.pan;
+                    let k = z / self.viewer.zoom;
+                    self.viewer.pan += (p - c) * (1.0 - k);
+                }
+                self.viewer.zoom = z;
+            }
+        }
+        if resp.dragged() {
+            self.viewer.pan += resp.drag_delta();
+        }
+        if resp.double_clicked() {
+            if self.viewer.zoom > 1.01 {
+                self.viewer.zoom = 1.0;
+                self.viewer.pan = Vec2::ZERO;
+            } else {
+                self.viewer.zoom = 2.5;
+            }
+        }
+        let size = Vec2::new(fit_w, fit_w * aspect) * self.viewer.zoom;
+        // keep the board on screen
+        let max_pan = ((size - canvas.size()) / 2.0).max(Vec2::ZERO);
+        self.viewer.pan = self.viewer.pan.clamp(-max_pan, max_pan);
+        let rect = Rect::from_center_size(canvas.center() + self.viewer.pan, size);
+        // pick raster scale for the current zoom: re-rasterise sharper when zoomed in
+        let px_per_pt = ui.ctx().pixels_per_point();
+        let want = (size.x * px_per_pt / meta.width as f32).clamp(0.3, 3.0);
+        let scale = if want <= 0.75 { 0.75 } else if want <= 1.5 { 1.5 } else { 3.0 };
+        let path = self.board_path(m, board);
+        let tex = self.raster.get(path.clone(), scale).or_else(|| self.raster.get(path.clone(), 0.75)).or_else(|| self.raster.get(path, 0.22));
+        let painter = ui.painter().with_clip_rect(canvas);
+        match tex {
+            Some(t) => {
+                painter.image(t.id(), rect, Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), Color32::WHITE);
+            }
+            None => {
+                // skeleton with derivation steps
+                painter.rect_filled(rect, 8.0, Color32::from_rgb(0x15, 0x10, 0x1e));
+                for (i, s) in ["parsing SVG", "laying out text", "rasterising"].iter().enumerate() {
+                    painter.text(rect.center() + Vec2::new(0.0, -20.0 + i as f32 * 20.0), egui::Align2::CENTER_CENTER, *s, body(12.0), DARK_TEXT2);
+                }
+            }
+        }
+        // ---- how-to-read footer (always visible)
+        let foot = Rect::from_min_max(egui::pos2(full.left(), full.bottom() - 70.0), full.max);
+        let mut fu = ui.new_child(egui::UiBuilder::new().max_rect(foot.shrink2(Vec2::new(12.0, 6.0))));
+        fu.label(RichText::new(&meta.how).font(body(11.5)).color(DARK_TEXT2));
+        if self.viewer.zoom > 1.01 {
+            fu.label(RichText::new(format!("{:.1}× · double-tap to fit", self.viewer.zoom)).font(body(10.0)).color(SECONDARY));
+        }
+        // ---- provenance sheet
+        if self.viewer.show_manifest {
+            self.manifest_sheet(ui, m, board, full);
+        }
+    }
+
+    fn manifest_sheet(&mut self, ui: &mut Ui, m: usize, board: &str, full: Rect) {
+        let p = self.lib.entries[m].dir.join("boards").join(format!("{board}.manifest.json"));
+        let v: serde_json::Value = std::fs::read_to_string(p).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
+        let sheet = Rect::from_min_max(egui::pos2(full.left(), full.top() + full.height() * 0.35), full.max);
+        ui.painter().rect_filled(sheet, egui::CornerRadius { nw: 22, ne: 22, sw: 0, se: 0 }, Color32::from_rgb(0x1c, 0x16, 0x28));
+        ui.painter().line_segment([sheet.left_top() + Vec2::new(sheet.width() / 2.0 - 24.0, 10.0), sheet.left_top() + Vec2::new(sheet.width() / 2.0 + 24.0, 10.0)], Stroke::new(4.0, Color32::from_gray(90)));
+        let mut su = ui.new_child(egui::UiBuilder::new().max_rect(sheet.shrink(16.0)));
+        su.add_space(12.0);
+        su.horizontal(|ui| {
+            ui.label(RichText::new("Provenance").font(head(24.0)).color(WHITE));
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if chip(ui, "Close", false, true) {
+                    self.viewer.show_manifest = false;
+                }
+            });
+        });
+        ScrollArea::vertical().id_salt("manifest").show(&mut su, |ui| {
+            let row = |ui: &mut Ui, k: &str, val: String| {
+                ui.label(RichText::new(k.to_uppercase()).font(bold(10.5)).color(DARK_TEXT2));
+                ui.label(RichText::new(val).font(body(13.0)).color(WHITE));
+            };
+            row(ui, "board", v["board"].as_str().unwrap_or(board).to_string());
+            row(ui, "metric_version", v["metric_version"].as_str().unwrap_or("?").to_string());
+            if let Some(o) = v["models"].as_object() {
+                for (k, x) in o {
+                    row(ui, k, x.as_str().unwrap_or("").to_string());
+                }
+            }
+            row(ui, "sources used", v["sources_used"].as_array().map(|a| a.iter().filter_map(|x| x.as_str()).collect::<Vec<_>>().join(", ")).unwrap_or_default());
+            row(ui, "built at", v["built_at"].as_str().unwrap_or("").to_string());
+            ui.label(RichText::new("FALLBACKS").font(bold(10.5)).color(DARK_TEXT2));
+            for f in v["fallbacks"].as_array().cloned().unwrap_or_default() {
+                ui.label(RichText::new(format!("• {}", f.as_str().unwrap_or(""))).font(body(12.0)).color(WHITE));
+            }
+            ui.label(RichText::new("THEME DECISIONS").font(bold(10.5)).color(DARK_TEXT2));
+            for f in v["theme"]["decisions"].as_array().cloned().unwrap_or_default() {
+                ui.label(RichText::new(format!("• {}", f.as_str().unwrap_or(""))).font(body(12.0)).color(WHITE));
+            }
+            ui.label(RichText::new("CONSISTENCY GATES").font(bold(10.5)).color(DARK_TEXT2));
+            for c in v["checks"].as_array().cloned().unwrap_or_default() {
+                let ok = c["ok"].as_bool().unwrap_or(false);
+                ui.label(RichText::new(format!("{} {}: {}", if ok { "✓" } else { "✗" }, c["name"].as_str().unwrap_or(""), c["detail"].as_str().unwrap_or(""))).font(body(11.5)).color(if ok { SECONDARY } else { Color32::from_rgb(0xff, 0x6b, 0x81) }));
+            }
+        });
+    }
+
+    fn export_board(&mut self, ctx: &egui::Context, m: usize, board: &str) {
+        #[allow(unused_mut)]
+        let mut dir = self.root.join("exports");
+        #[cfg(target_os = "android")]
+        if let Some(p) = self.android.as_ref().and_then(|a| a.external_data_path()) {
+            dir = p.join("exports");
+        }
+        let _ = std::fs::create_dir_all(&dir);
+        let out = dir.join(format!("{}_{board}.png", self.lib.entries[m].s.id));
+        let svg = std::fs::read_to_string(self.board_path(m, board)).unwrap_or_default();
+        match matchhub::render::save_png(&svg, &out, 2.0) {
+            Ok(()) => self.toast(ctx, &format!("Exported to {}", out.display())),
+            Err(e) => self.toast(ctx, &format!("Export failed: {e}")),
+        }
+    }
+}
