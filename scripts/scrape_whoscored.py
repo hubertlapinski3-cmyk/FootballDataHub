@@ -15,7 +15,35 @@ import re
 import sys
 from urllib.parse import urlparse
 
-from football_match_report.io.whoscored import fetch_match
+from football_match_report.io.whoscored import UA, _extract_match_centredata
+
+
+def fetch_match(url: str) -> dict:
+    """Headless Chromium fetch with diagnostics (what the page actually was) on failure."""
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True, args=["--disable-blink-features=AutomationControlled"])
+        ctx = browser.new_context(user_agent=UA, locale="en-GB", viewport={"width": 1366, "height": 900})
+        page = ctx.new_page()
+        resp = page.goto(url, timeout=60_000, wait_until="domcontentloaded")
+        try:
+            page.wait_for_function("document.documentElement.innerHTML.includes('matchCentreData')", timeout=30_000)
+        except Exception:
+            pass
+        page.wait_for_timeout(2000)
+        html = page.content()
+        title = page.title()
+        status = resp.status if resp else None
+        browser.close()
+    data = _extract_match_centredata(html)
+    if data is None:
+        low = html.lower()
+        hint = "bot wall (Incapsula/captcha)" if any(k in low for k in ("incapsula", "captcha", "access denied", "request unsuccessful")) else "no matchCentreData in page (match not played yet, wrong id or layout change)"
+        print(f"scrape failed: HTTP {status}, title={title!r}, html={len(html)} bytes, likely: {hint}", file=sys.stderr)
+        print("page start: " + re.sub(r"\s+", " ", html[:400]), file=sys.stderr)
+        raise SystemExit(4)
+    return data
 
 
 def main() -> int:
