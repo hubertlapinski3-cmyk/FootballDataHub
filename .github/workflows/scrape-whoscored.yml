@@ -26,15 +26,18 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install scraper (ricardoherediaj/football-analytics-tutorials, pinned)
+      - name: Install scraper (ricardoherediaj/football-analytics-tutorials, pinned commit, used from source)
         run: |
-          pip install "football-match-report[scrape] @ git+https://github.com/ricardoherediaj/football-analytics-tutorials@7ae865374d25eecbe46fe5331eed7bbdcaa16368"
+          git clone --filter=blob:none --quiet https://github.com/ricardoherediaj/football-analytics-tutorials "$RUNNER_TEMP/fat"
+          git -C "$RUNNER_TEMP/fat" checkout --quiet 7ae865374d25eecbe46fe5331eed7bbdcaa16368
+          pip install "pandas>=2.3.3" "playwright>=1.40"
           python -m playwright install --with-deps chromium
       - name: Scrape match
         id: scrape
         env:
           MATCH_URL: ${{ inputs.url }}
         run: |
+          export PYTHONPATH="$RUNNER_TEMP/fat/src"
           id=$(python scripts/scrape_whoscored.py "$MATCH_URL" data/whoscored)
           echo "match_id=$id" >> "$GITHUB_OUTPUT"
       - name: Commit match data
