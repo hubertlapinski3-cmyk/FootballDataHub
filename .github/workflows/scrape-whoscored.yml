@@ -1,4 +1,5 @@
 name: scrape-whoscored
+# Run from Actions > scrape-whoscored > Run workflow.
 # Headless-browser relay for WhoScored (bot-walled for plain HTTP).
 # Triggered from the Data Hub app (Settings > Scrape relay) or by hand:
 # Actions > scrape-whoscored > Run workflow > paste the match URL.
