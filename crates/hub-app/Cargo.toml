@@ -8,4 +8,4 @@ name = "hub_app"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-hub-core = { path = "../hub-core" }
+hub-core = { path = "../hub-core", default-features = false }

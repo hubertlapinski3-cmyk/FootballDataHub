@@ -1,0 +1,758 @@
+//! Boards 21-31: xT heatmap, goal frames, height/length, chance quality vs
+//! finishing, press triggers, progression scatter, funnel, entry routes,
+//! competition context scatters, player cards.
+
+use super::boards1::{side_tag, shot_r, H, W};
+use super::boards2::kde;
+use super::frame::*;
+use super::pitch::*;
+use super::svg::*;
+use super::Board;
+use crate::derive::metrics::*;
+use crate::model::*;
+use crate::store::TeamMatchRow;
+use crate::theme;
+
+// ---------------------------------------------------------------- 21 xT heatmap
+pub fn xt_heatmap(c: &Ctx, sd: Side) -> Board {
+    let mut s = Svg::new(W, H);
+    let t = c.a.t(sd);
+    header(&mut s, c, &format!("xT Heatmap · {}", c.name(sd)), "8 × 12 squares over the pitch · xT added where each successful pass or carry began · one scale for both teams", Scope::Team(sd));
+    // shared scale: 95th percentile of both teams' cells
+    let mut all: Vec<f64> = c.a.team.iter().flat_map(|t| t.xt_grid.iter().copied()).filter(|v| *v > 0.0).collect();
+    all.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let top = all.get(((all.len() as f64) * 0.95) as usize).copied().unwrap_or(0.05).max(0.01);
+    let p = Pitch::up(80.0, 200.0, 760.0, 840.0, 0.0);
+    for row in 0..12 {
+        for col in 0..8 {
+            let v = t.xt_grid[row * 8 + col];
+            let x0 = row as f64 / 12.0 * 105.0;
+            let y0 = col as f64 / 8.0 * 68.0;
+            let fill = c.th.seq(sd, v / top);
+            p.zone(&mut s, x0, x0 + 105.0 / 12.0, y0, y0 + 8.5, &fill, 1.0);
+            if v >= 0.05 {
+                let (cx, cy) = p.p(x0 + 105.0 / 24.0, y0 + 4.25);
+                s.t(cx, cy + 5.0, &format!("{v:.2}"), 13.0, 800, theme::TEXT, Anchor::Middle);
+            }
+        }
+    }
+    for row in 0..=12 {
+        let x = row as f64 / 12.0 * 105.0;
+        let (a1, b1) = p.p(x, 0.0);
+        let (a2, _) = p.p(x, 68.0);
+        s.line(a2, b1, a1, b1, "#3a3644", 0.8, "");
+    }
+    for col in 0..=8 {
+        let y = col as f64 / 8.0 * 68.0;
+        let (a1, b1) = p.p(0.0, y);
+        let (_, b2) = p.p(105.0, y);
+        s.line(a1, b1, a1, b2, "#3a3644", 0.8, "");
+    }
+    p.label_attack(&mut s);
+    p.draw(&mut s);
+    for (i, _) in t.top_xt.iter().take(3) {
+        let e = &c.m.events[*i];
+        let (a1, b1) = p.p(e.x, e.y);
+        let (a2, b2) = p.p(e.end().0, e.end().1);
+        s.arrow(a1, b1, a2, b2, "#ffffff", 2.5, 10.0, "");
+    }
+    // colourbar
+    let (bx, by, bh) = (860.0, 360.0, 420.0);
+    for i in 0..100 {
+        s.rect(bx, by + bh - (i + 1) as f64 * bh / 100.0, 16.0, bh / 100.0 + 0.6, &c.th.seq(sd, i as f64 / 100.0), "");
+    }
+    for k in 0..=4 {
+        let v = top * k as f64 / 4.0;
+        s.t(bx + 24.0, by + bh - k as f64 / 4.0 * bh + 4.0, &format!("{v:.2}"), 11.0, 500, theme::MUTED, Anchor::Start);
+    }
+    s.t(bx + 8.0, by + bh + 26.0, "xT per square · tops out at P95", 11.0, 500, theme::MUTED, Anchor::Middle);
+    let (px0, py0) = (980.0, 220.0);
+    panel(&mut s, px0, py0, 560.0, 620.0);
+    s.t(px0 + 24.0, py0 + 40.0, "TOP 10 XT PASSES", 14.0, 800, theme::TEXT, Anchor::Start);
+    for (k, (i, v)) in t.top_xt.iter().enumerate() {
+        let e = &c.m.events[*i];
+        let yy = py0 + 90.0 + k as f64 * 46.0;
+        s.t(px0 + 24.0, yy, &format!("{}. {} {:02}:{:02}", k + 1, c.pname(sd, e.player), e.minute, e.second), 15.0, 700, theme::TEXT, Anchor::Start);
+        s.t(px0 + 536.0, yy, &format!("{v:.3}"), 15.0, 700, theme::TEXT, Anchor::End);
+    }
+    legend_item(&mut s, px0 + 24.0, py0 + 590.0, "line", "#ffffff", "Top 3 xT passes drawn");
+    footer(&mut s, c, "Positive xT is the increase in local zone threat from successful passes or carries, summed in 8 by 12 squares where each began. Both teams share one colour scale; it is not a probability of scoring. xT grid fitted on StatsBomb Open Data.");
+    Board::new(&format!("21_xt_heatmap_{}", side_tag(sd)), "xT heatmap", s)
+}
+
+// ---------------------------------------------------------------- 22 goalkeeper frames
+pub fn gk_frames(c: &Ctx) -> Board {
+    let mut s = Svg::new(W, H);
+    header(&mut s, c, "Goalkeeper Goal Frames", "Every shot faced, plotted where it crossed the goal line · colour = outcome · shape = body part · size = xG", Scope::Full);
+    let sem = &c.th.semantic;
+    for (k, sd) in Side::both().iter().enumerate() {
+        let g = &c.a.t(*sd).gk;
+        let col = c.col(*sd).to_string();
+        let bx = 40.0 + k as f64 * 780.0;
+        s.h(bx, 210.0, &g.keeper_name.to_uppercase(), 30.0, &col, Anchor::Start);
+        s.t(bx, 236.0, &format!("{} · {} shots faced · {} off target · {} woodwork · {} blocked", c.name(*sd), g.faced_total, g.off_target, g.woodwork, g.blocked), 13.0, 400, theme::MUTED, Anchor::Start);
+        // goal: 7.32 x 2.44 -> u in [-1,1], z in [0,1]; plot area u in [-1.8,1.8], z in [0,1.9]
+        let (gx0, gy0, gw, gh) = (bx + 40.0, 270.0, 660.0, 320.0);
+        let pu = |u: f64| gx0 + (1.8 - u) / 3.6 * gw; // viewed from behind shooter: u>0 (left post) on the left
+        let pz = |z: f64| gy0 + gh - z / 1.9 * gh;
+        s.line(gx0, pz(0.0), gx0 + gw, pz(0.0), "#cfcdd8", 2.0, "");
+        s.rect(pu(1.0), pz(1.0), pu(-1.0) - pu(1.0), pz(0.0) - pz(1.0), "#1a1422", "");
+        for i in 1..8 {
+            let x = pu(1.0) + (pu(-1.0) - pu(1.0)) * i as f64 / 8.0;
+            s.line(x, pz(1.0), x, pz(0.0), "#2b2433", 1.0, "");
+        }
+        s.polyline(&[(pu(1.0), pz(0.0)), (pu(1.0), pz(1.0)), (pu(-1.0), pz(1.0)), (pu(-1.0), pz(0.0))], "#ffffff", 5.0, "");
+        for &q in &g.shots_faced {
+            let e = &c.m.events[q];
+            let sh = e.shot.as_ref().unwrap();
+            if sh.outcome == ShotOutcome::Blocked {
+                continue;
+            }
+            let fill = match sh.outcome {
+                ShotOutcome::Goal => sem.goal.as_str(),
+                ShotOutcome::Saved => sem.saved.as_str(),
+                ShotOutcome::Woodwork => sem.woodwork.as_str(),
+                _ => sem.off_target.as_str(),
+            };
+            // off-target shots without placement sit outside the posts / above the bar
+            let (u, z) = match (sh.goal_u, sh.goal_z) {
+                (Some(u), Some(z)) => (u, z),
+                (Some(u), None) => (u, 0.3),
+                _ => {
+                    let side = if e.y > 34.0 { 1.0 } else { -1.0 };
+                    (side * 1.35, 0.6)
+                }
+            };
+            let (x, y) = (pu(u.clamp(-1.75, 1.75)), pz(z.clamp(0.02, 1.85)));
+            let r = 4.0 + 10.0 * sh.xg.sqrt();
+            match sh.body {
+                Body::Head => s.triangle(x, y, r + 1.0, fill, "none", 0.0),
+                Body::Left => s.square(x, y, r * 0.8, fill, "none", 0.0),
+                _ => s.circle(x, y, r, fill, "none", 0.0, ""),
+            }
+        }
+        let tiles = [
+            ("FACED", g.on_target.to_string()),
+            ("SAVES", g.saves.to_string()),
+            ("CONCEDED", g.conceded.to_string()),
+            ("PREVENTED", signed(g.prevented, 2)),
+            ("SAVE RATE", if g.on_target > 0 { pct(g.saves as f64 / g.on_target as f64) } else { "–".into() }),
+            ("CLAIMS", g.claims.to_string()),
+            ("SWEEPS", g.sweeps.to_string()),
+        ];
+        let tw = 700.0 / 7.0;
+        for (i, (l, v)) in tiles.iter().enumerate() {
+            let x = bx + i as f64 * tw;
+            s.rrect(x + 4.0, 640.0, tw - 8.0, 110.0, 6.0, "#0f0c15", "#2a2633", 1.0);
+            s.h(x + tw / 2.0, 700.0, v, 34.0, theme::TEXT, Anchor::Middle);
+            s.t(x + tw / 2.0, 732.0, l, 10.5, 700, theme::MUTED, Anchor::Middle);
+        }
+        s.t(bx, 790.0, &format!("DISTRIBUTION   {} passes · avg {:.0} m · {:.0}% launched · {:.0}% completed", g.passes, g.avg_len, g.launched_pct * 100.0, g.completed_pct * 100.0), 13.5, 600, theme::TEXT, Anchor::Start);
+        s.t(bx, 816.0, &format!("HANDLING   {} held · {} parried safe · {} into danger", g.held, g.parried_safe, g.into_danger), 13.5, 600, theme::TEXT, Anchor::Start);
+    }
+    let mut lx = 80.0;
+    let y = 880.0;
+    lx = legend_item(&mut s, lx, y, "circle", &sem.off_target, "OFF TARGET");
+    lx = legend_item(&mut s, lx, y, "circle", &sem.woodwork, "WOODWORK");
+    lx = legend_item(&mut s, lx, y, "circle", &sem.saved, "SAVED");
+    lx = legend_item(&mut s, lx, y, "circle", &sem.goal, "GOAL");
+    lx = legend_item(&mut s, lx, y, "circle", "#ffffff", "RIGHT FOOT");
+    lx = legend_item(&mut s, lx, y, "square", "#ffffff", "LEFT FOOT");
+    legend_item(&mut s, lx, y, "triangle", "#ffffff", "HEADER");
+    let src = if c.m.events.iter().any(|e| e.shot.as_ref().map(|s| s.xgot_ext.is_some()).unwrap_or(false)) { "PSxG from FotMob/SofaScore xGOT." } else { "PSxG from the local placement model: no shot velocity or keeper position." };
+    s.t(80.0, 920.0, &format!("Goal frame seen from behind the shooter · off-target shots sit outside the posts · blocked shots are excluded because they never reached the keeper. {src}"), 11.5, 400, theme::GREY, Anchor::Start);
+    footer(&mut s, c, "Prevented = post-shot xG faced minus goals conceded, penalties and own goals left out; post-shot xG prices each attempt from its chance and where it crossed the line. Handling reads where each save sent the ball.");
+    Board::new("22_goalkeeper_frames", "Goalkeeper goal frames", s)
+}
+
+// ---------------------------------------------------------------- 23 height & length
+fn rolling_median(v: &[Option<f64>]) -> Vec<Option<f64>> {
+    (0..v.len())
+        .map(|i| {
+            let mut w: Vec<f64> = v[i.saturating_sub(1)..(i + 2).min(v.len())].iter().filter_map(|x| *x).collect();
+            if w.is_empty() {
+                return None;
+            }
+            w.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            Some(w[w.len() / 2])
+        })
+        .collect()
+}
+
+pub fn height_length(c: &Ctx) -> Board {
+    let mut s = Svg::new(W, H);
+    header(&mut s, c, "Defensive Action Height and Touch Spread", "Engagement height and compactness per five-minute window · the band shows which side was higher", Scope::Full);
+    let hs = &c.a.height;
+    let dur = c.a.duration_min.max(90.0);
+    for (panel_i, (series, label, ylab)) in [(&hs.height, "Mean x of defensive actions", "halfway"), (&hs.length, "Length of the team, up the pitch (IQR)", "")].into_iter().enumerate() {
+        let (x0, y0, w, h) = (110.0, 200.0 + panel_i as f64 * 430.0, 1380.0, 340.0);
+        let py = |v: f64| y0 + h - (v - 10.0) / 65.0 * h;
+        let px = |m: f64| x0 + m / dur * w;
+        for v in [10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0] {
+            s.line(x0, py(v), x0 + w, py(v), theme::LINE, 1.0, "");
+            s.t(x0 - 10.0, py(v) + 4.0, &format!("{v:.0}"), 12.0, 400, theme::MUTED, Anchor::End);
+        }
+        s.t(x0 - 60.0, y0 + h / 2.0, label, 12.0, 500, theme::MUTED, Anchor::Middle);
+        if !ylab.is_empty() {
+            s.line(x0, py(52.5), x0 + w, py(52.5), "#ffffff", 1.0, r#"opacity="0.5""#);
+            s.t(x0 + w + 6.0, py(52.5) + 4.0, ylab, 11.0, 500, theme::MUTED, Anchor::Start);
+        }
+        let smoothed: Vec<Vec<Option<f64>>> = series.iter().map(|v| rolling_median(v)).collect();
+        let mut allv: Vec<f64> = smoothed.iter().flatten().filter_map(|x| *x).collect();
+        allv.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        if let Some(med) = allv.get(allv.len() / 2) {
+            s.line(x0, py(*med), x0 + w, py(*med), "#9a98a6", 1.0, r#"stroke-dasharray="3 4""#);
+            s.t(x0 + w + 6.0, py(*med) + 16.0, &format!("match median {:.0}", med), 11.0, 500, theme::MUTED, Anchor::Start);
+        }
+        // shaded band between the two lines, coloured by the higher side
+        for i in 0..hs.windows.len().saturating_sub(1) {
+            if let (Some(h0), Some(a0), Some(h1), Some(a1)) = (smoothed[0][i], smoothed[1][i], smoothed[0][i + 1], smoothed[1][i + 1]) {
+                let higher = if h0 + h1 >= a0 + a1 { Side::Home } else { Side::Away };
+                s.poly(&[(px(hs.windows[i]), py(h0)), (px(hs.windows[i + 1]), py(h1)), (px(hs.windows[i + 1]), py(a1)), (px(hs.windows[i]), py(a0))], c.col(higher), "none", 0.0, r#"opacity="0.18""#);
+            }
+        }
+        for sd in Side::both() {
+            for (i, v) in series[sd.idx()].iter().enumerate() {
+                if let Some(v) = v {
+                    s.circle(px(hs.windows[i]), py(*v), 2.5, c.col(sd), "none", 0.0, r#"opacity="0.45""#);
+                }
+            }
+            let pts: Vec<(f64, f64)> = smoothed[sd.idx()].iter().enumerate().filter_map(|(i, v)| v.map(|v| (px(hs.windows[i]), py(v)))).collect();
+            s.polyline(&pts, c.col(sd), 3.0, "");
+        }
+        if let Some(p2) = c.m.periods.iter().find(|p| p.period == 2) {
+            let x = px(p2.start_t / 60.0);
+            s.line(x, y0, x, y0 + h, "#ffffff", 1.0, r#"stroke-dasharray="3 5" opacity="0.4""#);
+            s.t(x + 4.0, y0 + h - 8.0, "half time", 10.5, 500, theme::MUTED, Anchor::Start);
+        }
+        for mm in (0..=(dur as i32)).step_by(20) {
+            s.t(px(mm as f64), y0 + h + 20.0, &mm.to_string(), 12.0, 400, theme::MUTED, Anchor::Middle);
+        }
+    }
+    let mut lx = W - 420.0;
+    lx = legend_item(&mut s, lx, 190.0, "line", c.col(Side::Home), &c.name(Side::Home));
+    legend_item(&mut s, lx, 190.0, "line", c.col(Side::Away), &c.name(Side::Away));
+    s.t(110.0, 1032.0, "Line = rolling median of three windows · dots = the five-minute samples behind it · Match minute", 12.0, 400, theme::GREY, Anchor::Start);
+    footer(&mut s, c, "Lines are a rolling median of five-minute windows: how high each side made its defensive actions, and how far apart its touches were spread up the pitch. Higher on the first panel is a higher block; lower on the second is a more compact team.");
+    Board::new("23_height_length", "Defensive height and length", s)
+}
+
+// ---------------------------------------------------------------- 24 chance quality vs finishing
+pub fn chance_vs_finishing(c: &Ctx) -> Board {
+    let mut s = Svg::new(W, H);
+    header(&mut s, c, "Chance Quality against Finishing", "Pre-shot xG, post-shot xG once the placement is known, and the goals that followed", Scope::Full);
+    let (h, a) = (c.a.t(Side::Home), c.a.t(Side::Away));
+    s.h(60.0, 210.0, "From chance to goal", 24.0, theme::TEXT, Anchor::Start);
+    let groups = [("Chances created", h.npxg, a.npxg), ("Reached the frame", h.xg_on_target, a.xg_on_target), ("Value once struck", h.xgot, a.xgot), ("Goals", (h.goals - h.sp_pen.goals) as f64, (a.goals - a.sp_pen.goals) as f64)];
+    let mx = groups.iter().map(|g| g.1.max(g.2)).fold(1.0, f64::max) * 1.15;
+    let (x0, w) = (230.0, 470.0);
+    for (i, (l, hv, av)) in groups.iter().enumerate() {
+        let y = 250.0 + i as f64 * 160.0;
+        s.t(x0 - 12.0, y + 42.0, l, 14.0, 500, theme::TEXT, Anchor::End);
+        s.rect(x0, y, hv / mx * w, 36.0, c.col(Side::Home), "");
+        s.t(x0 + hv / mx * w + 8.0, y + 24.0, &if i == 3 { format!("{hv:.0}") } else { format!("{hv:.2}") }, 14.0, 800, theme::TEXT, Anchor::Start);
+        s.rect(x0, y + 44.0, av / mx * w, 36.0, c.col(Side::Away), "");
+        s.t(x0 + av / mx * w + 8.0, y + 68.0, &if i == 3 { format!("{av:.0}") } else { format!("{av:.2}") }, 14.0, 800, theme::TEXT, Anchor::Start);
+    }
+    let mut lx = x0;
+    lx = legend_item(&mut s, lx, 240.0 - 10.0, "square", c.col(Side::Home), &c.name(Side::Home));
+    legend_item(&mut s, lx, 240.0 - 10.0, "square", c.col(Side::Away), &c.name(Side::Away));
+    // dumbbells
+    s.h(820.0, 210.0, "Every attempt that reached the frame", 24.0, theme::TEXT, Anchor::Start);
+    s.t(820.0, 232.0, "A long line to the right is a well-struck ball · star = goal · the rest were saved", 12.0, 400, theme::MUTED, Anchor::Start);
+    let mut on: Vec<(Side, usize, f64, f64, bool)> = vec![];
+    for sd in Side::both() {
+        for &q in &c.a.t(sd).shots {
+            let sh = c.m.events[q].shot.as_ref().unwrap();
+            if matches!(sh.outcome, ShotOutcome::Goal | ShotOutcome::Saved) && !sh.penalty {
+                on.push((sd, q, sh.xg, sh.xgot_ext.or(sh.psxg).unwrap_or(0.0), sh.outcome == ShotOutcome::Goal));
+            }
+        }
+    }
+    on.sort_by(|a, b| b.3.partial_cmp(&a.3).unwrap());
+    on.truncate(16);
+    let (dx0, dw) = (1000.0, 520.0);
+    let dmax = on.iter().map(|o| o.2.max(o.3)).fold(0.3, f64::max).min(1.0);
+    let row_h = (720.0 / on.len().max(1) as f64).min(46.0);
+    for (i, (sd, q, xg, ps, goal)) in on.iter().enumerate() {
+        let y = 275.0 + i as f64 * row_h;
+        let e = &c.m.events[*q];
+        s.t(dx0 - 12.0, y + 5.0, &format!("{} {}", c.pname(*sd, e.player), e.label_minute()), 13.0, 600, c.col(*sd), Anchor::End);
+        let (a1, a2) = (dx0 + xg / dmax * dw, dx0 + ps / dmax * dw);
+        s.line(a1, y, a2, y, c.col(*sd), 2.5, "");
+        s.circle(a1, y, 6.0, "#0b0a12", c.col(*sd), 2.0, "");
+        if *goal {
+            s.star(a2, y, 10.0, "#ffffff", "none");
+        } else {
+            s.circle(a2, y, 6.0, c.col(*sd), "none", 0.0, "");
+        }
+    }
+    for k in 0..=4 {
+        let v = dmax * k as f64 / 4.0;
+        s.t(dx0 + v / dmax * dw, 275.0 + on.len() as f64 * row_h + 10.0, &format!("{v:.2}"), 11.0, 400, theme::MUTED, Anchor::Middle);
+    }
+    s.t(dx0 + dw / 2.0, 275.0 + on.len() as f64 * row_h + 32.0, "Chance (○) → value once struck (●)", 12.0, 500, theme::MUTED, Anchor::Middle);
+    let verdict = |t: &TeamStats| if t.xgot >= t.xg_on_target { "struck them better than the chances were worth" } else { "struck them worse than the chances were worth" };
+    s.t(60.0, 940.0, &format!("{}: {:.2} xG created, {:.2} of it reached the frame, worth {:.2} once struck, {} scored · {}.", c.name(Side::Home), h.npxg, h.xg_on_target, h.xgot, h.goals, verdict(h)), 16.0, 600, c.col(Side::Home), Anchor::Start);
+    s.t(60.0, 970.0, &format!("{}: {:.2} xG created, {:.2} of it reached the frame, worth {:.2} once struck, {} scored · {}.", c.name(Side::Away), a.npxg, a.xg_on_target, a.xgot, a.goals, verdict(a)), 16.0, 600, c.col(Side::Away), Anchor::Start);
+    s.t(60.0, 1004.0, "Post-shot xG is a local placement estimate. It has no shot velocity and no goalkeeper position, so it prices where the ball went, not how hard it was to stop.", 12.0, 400, theme::GREY, Anchor::Start);
+    footer(&mut s, c, "Pre-shot xG prices the chance, post-shot xG prices the strike once its placement is known, and goals are what the keeper let through. Penalties excluded.");
+    Board::new("24_chance_vs_finishing", "Chance quality against finishing", s)
+}
+
+// ---------------------------------------------------------------- 25 press triggers
+pub fn press_triggers(c: &Ctx) -> Board {
+    let mut s = Svg::new(W, H);
+    header(&mut s, c, "Press Triggers & Rest Defence", "Recorded actions preceding high regains and opponent shots within 12 seconds after losses", Scope::Full);
+    for (k, sd) in Side::both().iter().enumerate() {
+        let t = c.a.t(*sd);
+        let col = c.col(*sd).to_string();
+        let bx = 60.0 + k as f64 * 760.0;
+        s.h(bx, 215.0, &c.name(*sd).to_uppercase(), 30.0, &col, Anchor::Start);
+        let trig_n: usize = t.press_triggers.iter().map(|x| x.1).sum();
+        s.t(bx, 242.0, &format!("{} of {} high regains followed an opponent action", trig_n, t.high_regains.len()), 13.0, 400, theme::MUTED, Anchor::Start);
+        let mx = t.press_triggers.iter().map(|x| x.1).max().unwrap_or(1) as f64;
+        let (lx, w) = (bx + 140.0, 480.0);
+        if t.press_triggers.is_empty() {
+            s.t(lx, 320.0, "none recorded", 14.0, 400, theme::MUTED, Anchor::Start);
+        }
+        for (i, (lab, n)) in t.press_triggers.iter().enumerate() {
+            let y = 280.0 + i as f64 * 64.0;
+            s.t(lx - 10.0, y + 28.0, lab, 14.0, 500, theme::TEXT, Anchor::End);
+            s.rect(lx, y, *n as f64 / mx * w, 42.0, &col, "");
+            s.t(lx + *n as f64 / mx * w + 8.0, y + 27.0, &format!("{} ({:.0}%)", n, *n as f64 / t.high_regains.len().max(1) as f64 * 100.0), 13.0, 800, theme::TEXT, Anchor::Start);
+        }
+        let ty = 780.0;
+        s.t(bx, ty, "REST DEFENCE & SECOND BALLS", 13.0, 800, theme::TEXT, Anchor::Start);
+        let rows = [
+            ("Open-play losses", t.open_play_losses.to_string()),
+            ("Opponent shot within 12 seconds", format!("{}/{}", t.losses_to_shot, t.open_play_losses)),
+            ("Second balls won", format!("{}/{} ({:.0}%)", t.second_balls.0, t.second_balls.1, t.second_balls.0 as f64 / t.second_balls.1.max(1) as f64 * 100.0)),
+        ];
+        for (i, (l, v)) in rows.iter().enumerate() {
+            let y = ty + 44.0 + i as f64 * 44.0;
+            s.t(bx, y, l, 15.0, 400, theme::TEXT, Anchor::Start);
+            s.t(bx + 640.0, y, v, 15.0, 800, theme::TEXT, Anchor::End);
+            s.line(bx, y + 14.0, bx + 640.0, y + 14.0, theme::LINE, 1.0, "");
+        }
+    }
+    footer(&mut s, c, "Pressing-trigger counts are event-based review cues. They identify sequences to inspect and cannot confirm coordinated pressing without video.");
+    Board::new("25_press_triggers", "Press triggers and rest defence", s)
+}
+
+// ---------------------------------------------------------------- 26 progression scatter
+pub fn progression_scatter(c: &Ctx) -> Board {
+    let mut s = Svg::new(W, 1000.0);
+    let el: Vec<&PlayerStats> = c.a.players.iter().filter(|p| p.minutes >= 30.0 && p.role != Some(Role::Goalkeeper)).collect();
+    header(&mut s, c, "Progression and Chance Creation", &format!("{} observations | players with at least 30 minutes, match totals", el.len()), Scope::Full);
+    let (x0, y0, w, h) = (140.0, 210.0, 1360.0, 620.0);
+    let xs: Vec<f64> = el.iter().map(|p| (p.progressive_passes + p.progressive_carries) as f64).collect();
+    let ys: Vec<f64> = el.iter().map(|p| p.inferred_xa).collect();
+    let xmax = xs.iter().cloned().fold(4.0, f64::max) * 1.08;
+    let ymax = ys.iter().cloned().fold(0.3, f64::max) * 1.1;
+    let px = |v: f64| x0 + v / xmax * w;
+    let py = |v: f64| y0 + h - v / ymax * h;
+    for k in 0..=5 {
+        let v = ymax * k as f64 / 5.0;
+        s.line(x0, py(v), x0 + w, py(v), theme::LINE, 1.0, "");
+        s.t(x0 - 10.0, py(v) + 4.0, &format!("{v:.1}"), 12.0, 400, theme::MUTED, Anchor::End);
+    }
+    for k in 0..=5 {
+        let v = (xmax * k as f64 / 5.0).round();
+        s.t(px(v), y0 + h + 22.0, &format!("{v:.0}"), 12.0, 400, theme::MUTED, Anchor::Middle);
+    }
+    let med = |v: &[f64]| {
+        let mut v = v.to_vec();
+        v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        v.get(v.len() / 2).copied().unwrap_or(0.0)
+    };
+    let (mx, my) = (med(&xs), med(&ys));
+    s.line(px(mx), y0, px(mx), y0 + h, "#9a98a6", 1.0, r#"stroke-dasharray="3 4""#);
+    s.line(x0, py(my), x0 + w, py(my), "#9a98a6", 1.0, r#"stroke-dasharray="3 4""#);
+    s.t(x0 + w / 2.0, y0 + h + 48.0, "Progressive passes + explicit carries", 14.0, 600, theme::TEXT, Anchor::Middle);
+    s.t(x0 - 70.0, y0 + h / 2.0, "Inferred xA", 14.0, 600, theme::TEXT, Anchor::Middle);
+    // simple label repel: shift labels vertically when overlapping
+    let mut placed: Vec<(f64, f64)> = vec![];
+    for (i, p) in el.iter().enumerate() {
+        let (x, y) = (px(xs[i]), py(ys[i]));
+        let sd = p.side.unwrap();
+        if sd == Side::Home {
+            s.circle(x, y, 8.0, c.col(sd), "#000", 1.0, "");
+        } else {
+            s.square(x, y, 7.0, c.col(sd), "#000", 1.0);
+        }
+        let mut ly = y - 13.0;
+        let lw = text_w(&p.short, 12.0, false);
+        let mut tries = 0;
+        while placed.iter().any(|(ax, ay)| (ax - x).abs() < lw * 0.9 && (ay - ly).abs() < 14.0) && tries < 8 {
+            ly = if tries % 2 == 0 { y + 24.0 + 14.0 * (tries / 2) as f64 } else { y - 13.0 - 14.0 * ((tries + 1) / 2) as f64 };
+            tries += 1;
+        }
+        placed.push((x, ly));
+        s.t(x, ly, &p.short, 12.0, 600, theme::TEXT, Anchor::Middle);
+    }
+    let mut lx = x0 + w - 360.0;
+    lx = legend_item(&mut s, lx, 195.0, "circle", c.col(Side::Home), &c.name(Side::Home));
+    legend_item(&mut s, lx, 195.0, "square", c.col(Side::Away), &c.name(Side::Away));
+    footer(&mut s, c, "Dotted lines: eligible-player medians. Inferred xA = shot xG credited to a prior successful key pass in the same possession (≤ 15 seconds).");
+    Board::new("26_progression_scatter", "Progression and chance creation", s)
+}
+
+// ---------------------------------------------------------------- 27 funnel
+pub fn funnel(c: &Ctx) -> Board {
+    let mut s = Svg::new(W, 1000.0);
+    header(&mut s, c, "From Possession to a Shot on Target", "Each bar is what survived the stage above it · the % between bars is the conversion at that step", Scope::Full);
+    let labels = ["Possessions", "Reached final third", "Then box", "Then shot", "On target"];
+    let mx = c.a.t(Side::Home).funnel[0].max(c.a.t(Side::Away).funnel[0]).max(1) as f64;
+    let cx = W / 2.0;
+    s.h(cx - 400.0, 230.0, &c.name(Side::Home).to_uppercase(), 26.0, c.col(Side::Home), Anchor::Middle);
+    s.h(cx + 400.0, 230.0, &c.name(Side::Away).to_uppercase(), 26.0, c.col(Side::Away), Anchor::Middle);
+    for (i, l) in labels.iter().enumerate() {
+        let y = 270.0 + i as f64 * 130.0;
+        s.t(cx, y + 36.0, l, 16.0, 700, theme::TEXT, Anchor::Middle);
+        for sd in Side::both() {
+            let f = &c.a.t(sd).funnel;
+            let w = f[i] as f64 / mx * 460.0;
+            let (x, anchor, tx) = if sd == Side::Home { (cx - 120.0 - w, Anchor::End, cx - 130.0 - w) } else { (cx + 120.0, Anchor::Start, cx + 130.0 + w) };
+            s.rect(x, y, w.max(2.0), 60.0, c.col(sd), "");
+            s.h(tx, y + 42.0, &f[i].to_string(), 28.0, theme::TEXT, anchor);
+            if i < 4 {
+                let conv = if f[i] > 0 { f[i + 1] as f64 / f[i] as f64 * 100.0 } else { 0.0 };
+                let ax = if sd == Side::Home { cx - 160.0 - (f[i] as f64 / mx * 460.0) * 0.0 - 300.0 } else { cx + 160.0 };
+                s.t(ax, y + 96.0, &format!("↓ {conv:.0}%"), 13.0, 700, c.col(sd), Anchor::Start);
+            }
+        }
+    }
+    footer(&mut s, c, "Same possession at every stage; the arrows give the share that survived each step. The box stage counts possessions with any touch in the penalty area, so it runs higher than the box-entry figure.");
+    Board::new("27_possession_funnel", "Possession funnel", s)
+}
+
+// ---------------------------------------------------------------- 28 entry routes
+pub fn entry_routes(c: &Ctx) -> Board {
+    let mut s = Svg::new(W, 900.0);
+    header(&mut s, c, "Box-Entry Routes and Their Next Outcome", "A shot must follow the entry in the same possession; multiple entries can precede one shot", Scope::Full);
+    let mx = Side::both().iter().flat_map(|&sd| [Lane::Left, Lane::Centre, Lane::Right].map(|l| c.a.t(sd).entries.iter().filter(|e| e.lane == l).count())).max().unwrap_or(1).max(4) as f64 + 2.0;
+    for (k, sd) in Side::both().iter().enumerate() {
+        let t = c.a.t(*sd);
+        let bx = 60.0 + k as f64 * 770.0;
+        s.h(bx + 340.0, 220.0, &c.name(*sd), 24.0, theme::TEXT, Anchor::Middle);
+        let (x0, w) = (bx + 90.0, 560.0);
+        for (i, (lane, lab)) in [(Lane::Left, "Left"), (Lane::Centre, "Centre"), (Lane::Right, "Right")].iter().enumerate() {
+            let y = 300.0 + i as f64 * 160.0;
+            let all = t.entries.iter().filter(|e| e.lane == *lane).count();
+            let sh = t.entries.iter().filter(|e| e.lane == *lane && e.shot_followed).count();
+            s.t(x0 - 14.0, y + 5.0, lab, 14.0, 500, theme::TEXT, Anchor::End);
+            s.line(x0, y, x0 + all as f64 / mx * w, y, "#8d8b98", 4.0, "");
+            s.circle(x0 + all as f64 / mx * w, y, 9.0, "#cfcdd8", "none", 0.0, "");
+            s.square(x0 + sh as f64 / mx * w, y, 8.0, c.col(*sd), "none", 0.0);
+            s.t(x0 + sh as f64 / mx * w, y - 18.0, &format!("{} shot{} · {:.0}%", sh, if sh == 1 { "" } else { "s" }, if all > 0 { sh as f64 / all as f64 * 100.0 } else { 0.0 }), 13.0, 600, theme::TEXT, Anchor::Middle);
+            s.t(x0 + all as f64 / mx * w + 14.0, y + 24.0, &format!("{all} entr{}", if all == 1 { "y" } else { "ies" }), 13.0, 500, theme::TEXT, Anchor::Start);
+        }
+        for g in (0..=(mx as i32)).step_by(2) {
+            s.t(x0 + g as f64 / mx * w, 760.0, &g.to_string(), 12.0, 400, theme::MUTED, Anchor::Middle);
+        }
+        s.t(x0 + w / 2.0, 784.0, "Entries and entries followed by a shot", 12.0, 500, theme::MUTED, Anchor::Middle);
+        legend_item(&mut s, bx + 480.0, 260.0, "circle", "#cfcdd8", "All entries");
+        legend_item(&mut s, bx + 480.0, 282.0, "square", c.col(*sd), "Shot followed");
+        if t.crosses.1 > 0 {
+            s.t(bx + 90.0, 812.0, &format!("Crosses: {} of {} found a teammate", t.crosses.0, t.crosses.1), 12.0, 400, theme::GREY, Anchor::Start);
+        }
+    }
+    footer(&mut s, c, "The lane identifies entry origin; a following shot is descriptive, not proof of cause.");
+    Board::new("28_entry_routes", "Box-entry routes", s)
+}
+
+// ---------------------------------------------------------------- 29/30 competition context
+fn context_scatter(c: &Ctx, rows: &[TeamMatchRow], id: &str, title: &str, sub: &str, fx: impl Fn(&TeamMatchRow) -> f64, fy: impl Fn(&TeamMatchRow) -> f64, xl: &str, yl: &str) -> Board {
+    let mut s = Svg::new(W, 900.0);
+    header(&mut s, c, title, sub, Scope::Full);
+    let (x0, y0, w, h) = (130.0, 200.0, 1380.0, 560.0);
+    if rows.len() < 3 {
+        s.h(W / 2.0, 480.0, "Not enough stored matches yet", 36.0, theme::TEXT, Anchor::Middle);
+        s.t(W / 2.0, 520.0, "Run `matchhub season` (or build more matches) to fill the competition store.", 15.0, 400, theme::MUTED, Anchor::Middle);
+        footer(&mut s, c, "History is descriptive; input-model provenance is listed in each manifest.");
+        return Board::new(id, title, s);
+    }
+    let xs: Vec<f64> = rows.iter().map(&fx).collect();
+    let ys: Vec<f64> = rows.iter().map(&fy).collect();
+    let (xmin, xmax) = (xs.iter().cloned().fold(f64::INFINITY, f64::min) * 0.9, xs.iter().cloned().fold(0.0, f64::max) * 1.05);
+    let ymax = ys.iter().cloned().fold(1.0, f64::max) * 1.1;
+    let px = |v: f64| x0 + (v - xmin) / (xmax - xmin).max(1e-9) * w;
+    let py = |v: f64| y0 + h - v / ymax * h;
+    for k in 0..=4 {
+        let v = ymax * k as f64 / 4.0;
+        s.line(x0, py(v), x0 + w, py(v), theme::LINE, 1.0, "");
+        s.t(x0 - 10.0, py(v) + 4.0, &format!("{v:.1}"), 12.0, 400, theme::MUTED, Anchor::End);
+        let xv = xmin + (xmax - xmin) * k as f64 / 4.0;
+        s.t(px(xv), y0 + h + 22.0, &format!("{xv:.0}"), 12.0, 400, theme::MUTED, Anchor::Middle);
+    }
+    s.t(x0 + w / 2.0, y0 + h + 48.0, xl, 14.0, 600, theme::TEXT, Anchor::Middle);
+    s.t(x0 - 70.0, y0 + h / 2.0, yl, 14.0, 600, theme::TEXT, Anchor::Middle);
+    let names = [c.m.team(Side::Home).name.clone(), c.m.team(Side::Away).name.clone()];
+    let mut later: Vec<(f64, f64, Side, bool)> = vec![];
+    for (i, r) in rows.iter().enumerate() {
+        let side = names.iter().position(|n| *n == r.team).map(|k| if k == 0 { Side::Home } else { Side::Away });
+        match side {
+            Some(sd) => later.push((px(xs[i]), py(ys[i]), sd, r.match_id == c.m.id)),
+            None => s.circle(px(xs[i]), py(ys[i]), 4.5, "#8d8b98", "none", 0.0, r#"opacity="0.7""#),
+        }
+    }
+    for (x, y, sd, this) in later {
+        if this {
+            s.circle(x, y, 11.0, c.col(sd), "#ffffff", 2.5, "");
+            s.t(x + 14.0, y - 10.0, "this match", 12.0, 600, theme::TEXT, Anchor::Start);
+        } else {
+            s.circle(x, y, 5.5, c.col(sd), "none", 0.0, "");
+        }
+    }
+    let lx = x0 + 20.0;
+    legend_item(&mut s, lx, y0 + 20.0, "circle", c.col(Side::Home), &format!("{} · other matches", c.name(Side::Home)));
+    legend_item(&mut s, lx, y0 + 44.0, "ring", c.col(Side::Home), &format!("{} · this match", c.name(Side::Home)));
+    legend_item(&mut s, lx, y0 + 68.0, "circle", c.col(Side::Away), &format!("{} · other matches", c.name(Side::Away)));
+    legend_item(&mut s, lx, y0 + 92.0, "ring", c.col(Side::Away), &format!("{} · this match", c.name(Side::Away)));
+    footer(&mut s, c, "History is descriptive; input-model provenance is listed in each manifest. Only rows with the current metric_version are plotted.");
+    Board::new(id, title, s)
+}
+
+pub fn context_territory(c: &Ctx, rows: &[TeamMatchRow]) -> Board {
+    context_scatter(c, rows, "29_context_territory", "Territory and Chances Across the Competition", &format!("Comparable metric version, one point per team-match, not the two teams of one fixture · {} team-matches", rows.len()), |r| r.field_tilt * 100.0, |r| r.xg, "Field tilt (%)", "xG")
+}
+pub fn context_pressing(c: &Ctx, rows: &[TeamMatchRow]) -> Board {
+    let rows: Vec<TeamMatchRow> = rows.iter().filter(|r| r.ppda.is_some()).cloned().collect();
+    context_scatter(c, &rows, "30_context_pressing", "Pressing Frequency and Danger After Losses", "Same competition and metric version | one point per team-match", |r| r.ppda.unwrap_or(0.0).min(32.0), |r| r.dangerous_counter_pct, "PPDA (lower = fewer opponent passes per action)", "Dangerous counters / advanced losses (%)")
+}
+
+// ---------------------------------------------------------------- 31 player cards
+struct Measure {
+    label: &'static str,
+    value: f64,
+    display: String,
+}
+
+fn measures(p: &PlayerStats) -> Vec<Measure> {
+    let m = |label: &'static str, value: f64, display: String| Measure { label, value, display };
+    match p.role.unwrap_or(Role::Midfielder) {
+        Role::Goalkeeper => vec![
+            m("SAVES", p.saves as f64, p.saves.to_string()),
+            m("CLAIMS", p.claims as f64, p.claims.to_string()),
+            m("SWEEPS", p.sweeps as f64, p.sweeps.to_string()),
+            m("PROGRESSIVE PASS SHARE", p.prog_pass_share, pct(p.prog_pass_share)),
+            m("PASSES", p.passes as f64, p.passes.to_string()),
+            m("COMPLETION", if p.passes > 0 { p.passes_completed as f64 / p.passes as f64 } else { 0.0 }, pct(if p.passes > 0 { p.passes_completed as f64 / p.passes as f64 } else { 0.0 })),
+            m("PROGRESSION METRES", p.progression_m, format!("{:.0}", p.progression_m)),
+            m("XGCHAIN", p.xgchain, format!("{:.2}", p.xgchain)),
+        ],
+        Role::Defender => vec![
+            m("PROGRESSIVE PASS SHARE", p.prog_pass_share, pct(p.prog_pass_share)),
+            m("PADJ DEF. ACTIONS", p.padj_def, format!("{:.2}", p.padj_def)),
+            m("AERIALS WON", p.aerials.0 as f64, p.aerials.0.to_string()),
+            m("DEFENSIVE HEIGHT", p.def_height, format!("{:.0}", p.def_height)),
+            m("PROGRESSION METRES", p.progression_m, format!("{:.0}", p.progression_m)),
+            m("LINE-BREAK PASSES", p.line_breaks as f64, p.line_breaks.to_string()),
+            m("XGCHAIN", p.xgchain, format!("{:.2}", p.xgchain)),
+            m("RECOVERIES", p.recoveries as f64, p.recoveries.to_string()),
+        ],
+        Role::Midfielder => vec![
+            m("PROGRESSIVE PASS SHARE", p.prog_pass_share, pct(p.prog_pass_share)),
+            m("PADJ DEF. ACTIONS", p.padj_def, format!("{:.2}", p.padj_def)),
+            m("PROGRESSION METRES", p.progression_m, format!("{:.0}", p.progression_m)),
+            m("LINE-BREAK PASSES", p.line_breaks as f64, p.line_breaks.to_string()),
+            m("XA / 100 PASSES", p.xa_per100, format!("{:.2}", p.xa_per100)),
+            m("XGCHAIN", p.xgchain, format!("{:.2}", p.xgchain)),
+            m("FINAL-THIRD RECEPTIONS", p.ft_receptions as f64, p.ft_receptions.to_string()),
+            m("BOX ENTRIES", p.box_entries as f64, p.box_entries.to_string()),
+        ],
+        Role::Forward => vec![
+            m("XG", p.xg, format!("{:.2}", p.xg)),
+            m("XA", p.inferred_xa, format!("{:.2}", p.inferred_xa)),
+            m("XGCHAIN", p.xgchain, format!("{:.2}", p.xgchain)),
+            m("BOX ENTRIES", p.box_entries as f64, p.box_entries.to_string()),
+            m("FINAL-THIRD RECEPTIONS", p.ft_receptions as f64, p.ft_receptions.to_string()),
+            m("PROGRESSIVE PASS SHARE", p.prog_pass_share, pct(p.prog_pass_share)),
+            m("TAKE-ONS WON", p.take_ons.0 as f64, p.take_ons.0.to_string()),
+            m("PADJ DEF. ACTIONS", p.padj_def, format!("{:.2}", p.padj_def)),
+        ],
+    }
+}
+
+fn percentile(v: f64, pool: &[f64]) -> f64 {
+    if pool.is_empty() {
+        return 50.0;
+    }
+    let below = pool.iter().filter(|x| **x < v).count() as f64;
+    let eq = pool.iter().filter(|x| **x == v).count() as f64;
+    ((below + 0.5 * eq) / pool.len() as f64 * 100.0).clamp(0.0, 100.0)
+}
+
+pub fn player_card(c: &Ctx, p: &PlayerStats) -> Board {
+    let mut s = Svg::new(W, 1500.0);
+    let sd = p.side.unwrap();
+    let col = c.col(sd).to_string();
+    let role = p.role.unwrap_or(Role::Midfielder);
+    // peer pool: same role, 30+ min, at least 4 others; else all 30+ min players
+    let same: Vec<&PlayerStats> = c.a.players.iter().filter(|q| q.minutes >= 30.0 && q.role == Some(role)).collect();
+    let (pool, pool_note) = if same.len() >= 5 {
+        (same, format!("Ranked against {} players in the same role (30+ min) · grey ring = pool average", c.a.players.iter().filter(|q| q.minutes >= 30.0 && q.role == Some(role)).count() - 1))
+    } else {
+        let all: Vec<&PlayerStats> = c.a.players.iter().filter(|q| q.minutes >= 30.0).collect();
+        let n = all.len();
+        (all, format!("Ranked against all {} players over 30 minutes (fewer than 4 peers in role) · grey ring = pool average", n))
+    };
+    let ms = measures(p);
+    let pcts: Vec<f64> = ms.iter().enumerate().map(|(i, m)| {
+        let pv: Vec<f64> = pool.iter().filter(|q| q.id != p.id).map(|q| measures(q)[i].value).collect();
+        percentile(m.value, &pv)
+    }).collect();
+    let pool_avg: Vec<f64> = (0..ms.len()).map(|i| {
+        let pv: Vec<f64> = pool.iter().map(|q| measures(q)[i].value).collect();
+        let avg = pv.iter().sum::<f64>() / pv.len().max(1) as f64;
+        percentile(avg, &pv)
+    }).collect();
+    header(&mut s, c, &p.name, &format!("{} · {} · Touches {} · Shots {}", c.name(sd), role.label(), p.touches, p.shots), Scope::Player(sd));
+    // headline tiles: three strongest measures
+    let mut order: Vec<usize> = (0..ms.len()).collect();
+    // strongest measures first; zero-valued measures never headline unless everything is zero
+    order.sort_by(|a, b| ((ms[*b].value > 0.0) as u8).cmp(&((ms[*a].value > 0.0) as u8)).then(pcts[*b].partial_cmp(&pcts[*a]).unwrap()));
+    let n_pool = pool.len();
+    for (k, &i) in order.iter().take(3).enumerate() {
+        let x = 60.0 + k as f64 * 300.0;
+        s.h(x, 240.0, &ms[i].display, 64.0, &col, Anchor::Start);
+        s.t(x, 270.0, ms[i].label, 14.0, 800, theme::TEXT, Anchor::Start);
+        let rank = pool.iter().filter(|q| measures(q)[i].value > ms[i].value).count() + 1;
+        s.t(x, 292.0, &format!("{} of {} in the pool", rank, n_pool), 12.0, 400, theme::MUTED, Anchor::Start);
+    }
+    s.h(980.0, 240.0, &format!("{:.0}", p.minutes), 64.0, theme::MUTED, Anchor::Start);
+    s.t(980.0, 270.0, "MINUTES", 14.0, 800, theme::TEXT, Anchor::Start);
+    // ring
+    let (cx, cy, r0, r1) = (320.0, 590.0, 40.0, 210.0);
+    let n = ms.len();
+    for i in 0..n {
+        let a0 = -std::f64::consts::FRAC_PI_2 + i as f64 / n as f64 * std::f64::consts::TAU + 0.02;
+        let a1 = a0 + std::f64::consts::TAU / n as f64 - 0.04;
+        let wedge = |rr: f64| {
+            let mut d = format!("M {:.1} {:.1}", cx + r0 * a0.cos(), cy + r0 * a0.sin());
+            for k in 0..=12 {
+                let a = a0 + (a1 - a0) * k as f64 / 12.0;
+                d.push_str(&format!(" L {:.1} {:.1}", cx + rr * a.cos(), cy + rr * a.sin()));
+            }
+            d.push_str(&format!(" L {:.1} {:.1} Z", cx + r0 * a1.cos(), cy + r0 * a1.sin()));
+            d
+        };
+        s.path(&wedge(r1), "#16121c", "#2a2633", 1.0, "");
+        let rr = r0 + (r1 - r0) * pcts[i] / 100.0;
+        s.path(&wedge(rr), &col, "none", 0.0, r#"opacity="0.9""#);
+        let ra = r0 + (r1 - r0) * pool_avg[i] / 100.0;
+        let pts: Vec<(f64, f64)> = (0..=12).map(|k| {
+            let a = a0 + (a1 - a0) * k as f64 / 12.0;
+            (cx + ra * a.cos(), cy + ra * a.sin())
+        }).collect();
+        s.polyline(&pts, "#9a98a6", 2.0, "");
+        let am = (a0 + a1) / 2.0;
+        let (lx, ly) = (cx + (r1 + 46.0) * am.cos(), cy + (r1 + 46.0) * am.sin());
+        s.t(lx, ly - 8.0, ms[i].label, 11.0, 800, theme::TEXT, Anchor::Middle);
+        s.t(lx, ly + 10.0, &ms[i].display, 13.0, 800, if order[0] == i || order[1] == i || order[2] == i { &col } else { theme::TEXT }, Anchor::Middle);
+    }
+    let weakest = *order.last().unwrap();
+    s.t(cx, cy + r1 + 90.0, &pool_note, 12.0, 400, theme::MUTED, Anchor::Middle);
+    s.t(cx, cy + r1 + 110.0, &format!("Short wedge: {} at {:.0}, where this performance differed most from his pool", ms[weakest].label.to_lowercase(), pcts[weakest]), 12.0, 400, theme::MUTED, Anchor::Middle);
+    // map
+    s.t(1080.0, 360.0, "Where he had the ball, and where he defended", 18.0, 600, theme::TEXT, Anchor::Middle);
+    let pm = Pitch::right(680.0, 380.0, 820.0, 520.0);
+    let ev = &c.m.events;
+    let mine: Vec<&Event> = ev.iter().filter(|e| e.player == Some(p.id) && e.side == sd).collect();
+    let touches: Vec<(f64, f64)> = mine.iter().filter(|e| e.kind.is_on_ball() && !matches!(e.kind, Kind::Foul)).map(|e| (e.x, e.y)).collect();
+    kde(&mut s, &pm, &touches, &c.th.semantic.touch, 6.0, 0.6);
+    pm.draw(&mut s);
+    for e in &mine {
+        let (x, y) = pm.p(e.x, e.y);
+        if matches!(e.kind, Kind::Tackle | Kind::Interception | Kind::Recovery | Kind::Clearance | Kind::Block | Kind::Challenge) {
+            s.diamond(x, y, 6.0, &c.th.semantic.defending, "#000", 0.8);
+        } else if e.kind == Kind::Shot {
+            s.star(x, y, 9.0, "#ffffff", "none");
+        } else if e.kind.is_on_ball() {
+            s.circle(x, y, 2.4, "#ffffff", "none", 0.0, r#"opacity="0.7""#);
+        }
+        if e.kind == Kind::Pass && e.success {
+            let (ex, ey) = e.end();
+            let into_box = !crate::derive::in_box(e.x, e.y) && crate::derive::in_box(ex, ey);
+            let (a2, b2) = pm.p(ex, ey);
+            if into_box {
+                s.arrow(x, y, a2, b2, "#ffffff", 2.2, 9.0, "");
+            } else if ex - e.x >= 15.0 {
+                s.line(x, y, a2, b2, "#cfcdd8", 1.0, r#"opacity="0.6""#);
+            }
+        }
+    }
+    if p.def_height > 0.0 {
+        let (hx, _) = pm.p(p.def_height, 0.0);
+        s.line(hx, pm.y0, hx, pm.y0 + pm.h, &c.th.semantic.defending, 1.5, r#"stroke-dasharray="6 4""#);
+    }
+    let mut lx = 690.0;
+    lx = legend_item(&mut s, lx, 935.0, "square", &c.th.semantic.touch, "touch density");
+    lx = legend_item(&mut s, lx, 935.0, "circle", "#ffffff", "a touch");
+    lx = legend_item(&mut s, lx, 935.0, "diamond", &c.th.semantic.defending, "defending");
+    lx = legend_item(&mut s, lx, 935.0, "dash", &c.th.semantic.defending, "defensive height");
+    legend_item(&mut s, lx, 935.0, "star", "#ffffff", "shot");
+    let n_def = mine.iter().filter(|e| matches!(e.kind, Kind::Tackle | Kind::Interception | Kind::Recovery | Kind::Clearance | Kind::Block | Kind::Challenge)).count();
+    let avg_up = p.avg_x;
+    let lr = p.avg_y - 34.0;
+    s.t(690.0, 965.0, &format!("TACTICAL SNAPSHOT  Touches by third · defensive / middle / final {} / {} / {} · average touch {:.0} m upfield, {:.0} m {} of centre · {} defensive actions", p.touches_by_third[0], p.touches_by_third[1], p.touches_by_third[2], avg_up, lr.abs(), if lr >= 0.0 { "left" } else { "right" }, n_def), 11.5, 500, theme::MUTED, Anchor::Start);
+    // stat columns
+    let cols: Vec<(&str, Vec<(String, String)>)> = match role {
+        Role::Goalkeeper => vec![
+            ("SHOT STOPPING", vec![("Saves".into(), p.saves.to_string()), ("Claims".into(), p.claims.to_string()), ("Sweeps".into(), p.sweeps.to_string())]),
+            ("DISTRIBUTION", vec![("Passes".into(), format!("{} ({:.0}%)", p.passes, if p.passes > 0 { p.passes_completed as f64 / p.passes as f64 * 100.0 } else { 0.0 })), ("Progressive passes".into(), p.progressive_passes.to_string()), ("Progression metres".into(), format!("{:.0}", p.progression_m))]),
+            ("INVOLVEMENT", vec![("Touches".into(), p.touches.to_string()), ("xGChain".into(), format!("{:.2}", p.xgchain)), ("VAEP".into(), signed(p.vaep_off + p.vaep_def, 2))]),
+        ],
+        _ => {
+            let on_ball = vec![
+                ("Touches".to_string(), p.touches.to_string()),
+                ("Passes".into(), format!("{} ({:.0}%)", p.passes, if p.passes > 0 { p.passes_completed as f64 / p.passes as f64 * 100.0 } else { 0.0 })),
+                ("Progressive passes".into(), p.progressive_passes.to_string()),
+                ("Line-breaking passes".into(), p.line_breaks.to_string()),
+                ("Take-ons won".into(), format!("{} of {}", p.take_ons.0, p.take_ons.1)),
+                ("Dispossessed".into(), p.dispossessed.to_string()),
+            ];
+            let defending = vec![
+                ("Recoveries".to_string(), p.recoveries.to_string()),
+                ("Interceptions".into(), p.interceptions.to_string()),
+                ("Tackles won".into(), p.tackles_won.to_string()),
+                ("Dribbled past".into(), p.dribbled_past.to_string()),
+                ("Aerials won".into(), format!("{} of {}", p.aerials.0, p.aerials.1)),
+            ];
+            let threat = vec![
+                ("Shots".to_string(), p.shots.to_string()),
+                ("xG".into(), format!("{:.2}", p.xg)),
+                ("Inferred xA".into(), format!("{:.2}", p.inferred_xa)),
+                ("Box entries".into(), p.box_entries.to_string()),
+                ("Final-third receptions".into(), p.ft_receptions.to_string()),
+                ("Positive xT".into(), format!("{:.2}", p.positive_xt)),
+                ("xGBuildup".into(), format!("{:.2}", p.xgbuildup)),
+            ];
+            match role {
+                Role::Defender => vec![("ON THE BALL", on_ball), ("DEFENDING", defending), ("THREAT", threat)],
+                Role::Midfielder => vec![("ON THE BALL", on_ball), ("CREATION", threat), ("WITHOUT THE BALL", defending)],
+                _ => vec![("THREAT", threat), ("ON THE BALL", on_ball), ("WITHOUT THE BALL", defending)],
+            }
+        }
+    };
+    for (k, (title, rows)) in cols.iter().enumerate() {
+        let x = 60.0 + k as f64 * 500.0;
+        s.h(x, 1040.0, title, 24.0, theme::TEXT, Anchor::Start);
+        s.line(x, 1052.0, x + 460.0, 1052.0, &col, 2.0, "");
+        for (i, (l, v)) in rows.iter().enumerate() {
+            let y = 1086.0 + i as f64 * 32.0;
+            s.t(x, y, l, 14.0, 400, theme::TEXT, Anchor::Start);
+            s.t(x + 460.0, y, v, 14.0, 800, theme::TEXT, Anchor::End);
+            s.line(x, y + 11.0, x + 460.0, y + 11.0, theme::LINE, 1.0, "");
+        }
+    }
+    s.t(60.0, 1340.0, "Raw match totals; unavailable values show as N/A. PAdj defensive actions: tackles, interceptions, recoveries, clearances, challenges and blocks per 100 opponent touches.", 11.5, 400, theme::GREY, Anchor::Start);
+    s.t(60.0, 1360.0, "Defensive height: mean x of those actions. Progression metres: forward distance of completed passes and carries. xGChain: possession xG credited to every player involved; xGBuildup excludes shooter and key passer.", 11.5, 400, theme::GREY, Anchor::Start);
+    footer(&mut s, c, "Role and minutes govern comparisons; these are match observations, not a season ability rating. Nominal pitch 105 × 68 m.");
+    Board::new(&format!("31_player_{}_{}", side_tag(sd), p.id), "Player card", s)
+}
+
+pub fn _unused(_: f64) -> f64 {
+    shot_r(0.0)
+}
