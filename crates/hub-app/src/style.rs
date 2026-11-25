@@ -20,6 +20,23 @@ pub const DARK_CARD: Color32 = Color32::from_rgb(0x1b, 0x15, 0x26);
 pub const DARK_TEXT2: Color32 = Color32::from_rgb(0xb8, 0xb8, 0xc0);
 pub const DARK_LINE: Color32 = Color32::from_rgb(0x2a, 0x26, 0x33);
 
+static FORCE_DARK: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+pub fn set_force_dark(v: bool) {
+    FORCE_DARK.store(v, std::sync::atomic::Ordering::Relaxed);
+}
+/// True when the user's theme forces dark chrome on screens that are light by default.
+pub fn lt() -> bool {
+    FORCE_DARK.load(std::sync::atomic::Ordering::Relaxed)
+}
+/// Primary text colour for the default-light screens.
+pub fn fg() -> Color32 {
+    if lt() { WHITE } else { BLACK }
+}
+/// Secondary text colour for the default-light screens.
+pub fn sub() -> Color32 {
+    if lt() { DARK_TEXT2 } else { TEXT2 }
+}
+
 pub const CONDENSED: &str = "condensed";
 
 pub fn hex(s: &str) -> Color32 {

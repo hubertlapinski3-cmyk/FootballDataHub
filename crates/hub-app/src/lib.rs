@@ -45,6 +45,13 @@ pub struct Prefs {
     /// Token used only to start relay runs / read a private relay repo. Stored in app-private storage.
     #[serde(default)]
     pub relay_token: String,
+    /// "system" (default), "light" or "dark".
+    #[serde(default = "default_theme")]
+    pub theme: String,
+}
+
+fn default_theme() -> String {
+    "system".into()
 }
 
 fn default_relay() -> String {
@@ -207,7 +214,13 @@ impl App {
             ctx.request_repaint();
         }
         let scr = self.screen();
-        let dark = scr.dark();
+        let force = match self.prefs.theme.as_str() {
+            "dark" => true,
+            "light" => false,
+            _ => ctx.system_theme() == Some(egui::Theme::Dark),
+        };
+        style::set_force_dark(force);
+        let dark = scr.dark() || force;
         if self.last_dark != Some(dark) {
             style::apply_visuals(&ctx, dark);
             self.last_dark = Some(dark);

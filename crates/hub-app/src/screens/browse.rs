@@ -64,8 +64,8 @@ impl App {
     pub fn home(&mut self, ui: &mut Ui) {
         ScrollArea::vertical().id_salt("home").show(ui, |ui| {
             egui::Frame::new().inner_margin(egui::Margin::symmetric(16, 12)).show(ui, |ui| {
-                ui.label(RichText::new("Data Hub").font(head(34.0)).color(BLACK));
-                ui.label(RichText::new("Paste a WhoScored match ID or URL").font(body(13.5)).color(TEXT2));
+                ui.label(RichText::new("Data Hub").font(head(34.0)).color(fg()));
+                ui.label(RichText::new("Paste a WhoScored match ID or URL").font(body(13.5)).color(sub()));
                 let running = self.build.lock().unwrap().running;
                 ui.add(egui::TextEdit::singleline(&mut self.input).hint_text("e.g. 1650630 or https://www.whoscored.com/Matches/…").desired_width(f32::INFINITY).min_size(Vec2::new(0.0, 46.0)).font(body(15.0)));
                 ui.horizontal(|ui| {
@@ -80,7 +80,7 @@ impl App {
                             library::spawn_build(self.root.clone(), Source::WhoScored(s), self.prefs.online(), self.prefs.relay(), self.build.clone(), ui.ctx().clone());
                         }
                     }
-                    if ghost(ui, "Sample match", false) && !running {
+                    if ghost(ui, "Sample match", lt()) && !running {
                         self.open_on_done = true;
                         library::spawn_build(self.root.clone(), Source::Sample, false, None, self.build.clone(), ui.ctx().clone());
                     }
@@ -88,7 +88,7 @@ impl App {
                 // saved pages dropped into the import folder
                 let imports = self.import_files();
                 if !imports.is_empty() {
-                    section_title(ui, "Saved pages to import", false);
+                    section_title(ui, "Saved pages to import", lt());
                     for f in imports.iter().take(6) {
                         let name = f.file_name().map(|x| x.to_string_lossy().to_string()).unwrap_or_default();
                         if ui.add(egui::Button::new(RichText::new(format!("⤓  {name}")).font(body(14.0))).min_size(Vec2::new(ui.available_width(), 44.0))).clicked() && !running {
@@ -97,13 +97,13 @@ impl App {
                         }
                     }
                 } else {
-                    ui.label(RichText::new(format!("Saved WhoScored pages (.html / .json / .gz) placed in {} appear here.", self.import_dir().display())).font(body(12.0)).color(TEXT2));
+                    ui.label(RichText::new(format!("Saved WhoScored pages (.html / .json / .gz) placed in {} appear here.", self.import_dir().display())).font(body(12.0)).color(sub()));
                 }
                 ui.add_space(6.0);
-                self.build_status(ui, false);
-                section_title(ui, "Latest built matches", false);
+                self.build_status(ui, lt());
+                section_title(ui, "Latest built matches", lt());
                 if self.lib.entries.is_empty() {
-                    ui.label(RichText::new("No matches yet. Build one above or try the sample.").color(TEXT2));
+                    ui.label(RichText::new("No matches yet. Build one above or try the sample.").color(sub()));
                 }
                 let mut open = None;
                 ScrollArea::horizontal().id_salt("latest").show(ui, |ui| {
@@ -118,15 +118,15 @@ impl App {
                 if let Some(i) = open {
                     self.push(Screen::Hub(i));
                 }
-                section_title(ui, "Quick actions", false);
+                section_title(ui, "Quick actions", lt());
                 ui.columns(4, |cols| {
                     let items = [("list", "Matches"), ("grid", "Boards"), ("compare", "Compare"), ("gear", "Settings")];
                     for (k, (icon, label)) in items.iter().enumerate() {
-                        let r = card(false).show(&mut cols[k], |ui| {
+                        let r = card(lt()).show(&mut cols[k], |ui| {
                             ui.vertical_centered(|ui| {
                                 let (ir, _) = ui.allocate_exact_size(Vec2::splat(28.0), Sense::hover());
                                 draw_icon(ui, ir, icon);
-                                ui.label(RichText::new(*label).font(semi(12.0)).color(BLACK));
+                                ui.label(RichText::new(*label).font(semi(12.0)).color(fg()));
                             });
                         });
                         if r.response.interact(Sense::click()).clicked() {
@@ -171,7 +171,7 @@ impl App {
     // ------------------------------------------------------------------ match list
     pub fn matches(&mut self, ui: &mut Ui) {
         egui::Frame::new().inner_margin(egui::Margin::symmetric(12, 4)).show(ui, |ui| {
-            if top_bar(ui, "Matches", false) {
+            if top_bar(ui, "Matches", lt()) {
                 self.back();
             }
             let mut open = None;
@@ -185,7 +185,7 @@ impl App {
                         open = Some(i);
                     }
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new(format!("{} boards · {}", self.lib.entries[i].s.boards.len(), self.lib.entries[i].s.source)).font(body(12.0)).color(TEXT2));
+                        ui.label(RichText::new(format!("{} boards · {}", self.lib.entries[i].s.boards.len(), self.lib.entries[i].s.source)).font(body(12.0)).color(sub()));
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                             if ui.add(egui::Button::new(RichText::new("Delete").color(ERROR)).fill(Color32::TRANSPARENT)).clicked() {
                                 del = Some(i);
@@ -318,16 +318,16 @@ impl App {
         let e = self.lib.entries[m].clone();
         let (hc, ac) = (self.team_col_light(m, 0), self.team_col_light(m, 1));
         egui::Frame::new().inner_margin(egui::Margin::symmetric(16, 4)).show(ui, |ui| {
-            if top_bar(ui, "Match report", false) {
+            if top_bar(ui, "Match report", lt()) {
                 self.back();
             }
             ScrollArea::vertical().id_salt("report").show(ui, |ui| {
-                ui.label(RichText::new(&rep.headline).font(head(34.0)).color(BLACK));
+                ui.label(RichText::new(&rep.headline).font(head(34.0)).color(fg()));
                 rich_paragraph(ui, &rep.standfirst, &e.s.home, &e.s.away, hc, ac, 16.0);
                 ui.add_space(6.0);
                 for sec in &rep.sections {
                     ui.add_space(10.0);
-                    ui.label(RichText::new(&sec.title).font(head(24.0)).color(BLACK));
+                    ui.label(RichText::new(&sec.title).font(head(24.0)).color(fg()));
                     let (r, _) = ui.allocate_exact_size(Vec2::new(48.0, 3.0), Sense::hover());
                     ui.painter().rect_filled(r, 1.0, PRIMARY);
                     let guide = sec.title == "Complete visual guide";
@@ -338,7 +338,7 @@ impl App {
                         ui.horizontal_wrapped(|ui| {
                             for b in &sec.boards {
                                 let title = e.s.boards.iter().find(|x| &x.id == b).map(|x| x.title.clone()).unwrap_or(b.clone());
-                                if ghost(ui, &format!("Open board · {title}"), false) {
+                                if ghost(ui, &format!("Open board · {title}"), lt()) {
                                     self.push(Screen::Viewer { m, board: b.clone() });
                                 }
                             }
@@ -592,11 +592,11 @@ impl App {
     // ------------------------------------------------------------------ 8 settings
     pub fn settings(&mut self, ui: &mut Ui) {
         egui::Frame::new().inner_margin(egui::Margin::symmetric(16, 4)).show(ui, |ui| {
-            if top_bar(ui, "Settings & sources", false) {
+            if top_bar(ui, "Settings & sources", lt()) {
                 self.back();
             }
             ScrollArea::vertical().id_salt("settings").show(ui, |ui| {
-                section_title(ui, "Data sources", false);
+                section_title(ui, "Data sources", lt());
                 for (n, d) in [
                     ("Opta via WhoScored", "Primary event stream: every on-ball event with coordinates and qualifiers."),
                     ("FotMob · SofaScore", "Team colours, crests, per-shot xG and xGOT (best effort, recorded as fallbacks)."),
@@ -604,23 +604,23 @@ impl App {
                     ("StatsBomb Open Data", "Training data for the in-house xG, PSxG, xT and VAEP models. Attributed on those boards."),
                     ("ClubElo · football-data.co.uk · Understat", "Context and calibration sources supported by the pipeline."),
                 ] {
-                    ui.label(RichText::new(n).font(semi(14.0)).color(BLACK));
-                    ui.label(RichText::new(d).font(body(12.5)).color(TEXT2));
+                    ui.label(RichText::new(n).font(semi(14.0)).color(fg()));
+                    ui.label(RichText::new(d).font(body(12.5)).color(sub()));
                 }
-                section_title(ui, "Personal use", false);
-                card(false).show(ui, |ui| {
+                section_title(ui, "Personal use", lt());
+                card(lt()).show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     let mut v = self.prefs.personal_fetch;
                     if ui.checkbox(&mut v, RichText::new("Allow fetching from WhoScored, FotMob and SofaScore on this device").font(body(14.0))).changed() {
                         self.prefs.personal_fetch = v;
                         self.save_prefs();
                     }
-                    ui.label(RichText::new("These sites' terms generally prohibit automated scraping and redistribution. Keep this for personal use, one polite request per match, cached afterwards. If WhoScored shows a bot wall, save the page in a browser and import it instead.").font(body(12.0)).color(TEXT2));
+                    ui.label(RichText::new("These sites' terms generally prohibit automated scraping and redistribution. Keep this for personal use, one polite request per match, cached afterwards. If WhoScored shows a bot wall, save the page in a browser and import it instead.").font(body(12.0)).color(sub()));
                 });
-                section_title(ui, "Scrape relay (GitHub Actions)", false);
-                card(false).show(ui, |ui| {
+                section_title(ui, "Scrape relay (GitHub Actions)", lt());
+                card(lt()).show(ui, |ui| {
                     ui.set_width(ui.available_width());
-                    ui.label(RichText::new("WhoScored blocks plain requests, so links are scraped by a headless browser in your repository's scrape-whoscored workflow (built on ricardoherediaj/football-analytics-tutorials). The app reads finished matches from the repo and, with a token, starts the run itself.").font(body(12.5)).color(TEXT2));
+                    ui.label(RichText::new("WhoScored blocks plain requests, so links are scraped by a headless browser in your repository's scrape-whoscored workflow (built on ricardoherediaj/football-analytics-tutorials). The app reads finished matches from the repo and, with a token, starts the run itself.").font(body(12.5)).color(sub()));
                     ui.label(RichText::new("Repository (owner/name)").font(semi(13.0)));
                     if ui.add(egui::TextEdit::singleline(&mut self.prefs.relay_repo).desired_width(f32::INFINITY).min_size(Vec2::new(0.0, 44.0))).lost_focus() {
                         self.save_prefs();
@@ -631,18 +631,31 @@ impl App {
                         if r.lost_focus() {
                             self.save_prefs();
                         }
-                        if chip(ui, if self.show_token { "Hide" } else { "Show" }, false, false) {
+                        if chip(ui, if self.show_token { "Hide" } else { "Show" }, false, lt()) {
                             self.show_token = !self.show_token;
                         }
                     });
-                    ui.label(RichText::new("Stored only in this app's private storage, never in the repository. Without a token the app still reads matches you scrape by hand (Actions > scrape-whoscored > Run workflow).").font(body(12.0)).color(TEXT2));
-                    if ghost(ui, "Save relay", false) {
+                    ui.label(RichText::new("Stored only in this app's private storage, never in the repository. Without a token the app still reads matches you scrape by hand (Actions > scrape-whoscored > Run workflow).").font(body(12.0)).color(sub()));
+                    if ghost(ui, "Save relay", lt()) {
                         self.save_prefs();
                         self.toast(ui.ctx(), if self.prefs.relay().is_some() { "Relay saved" } else { "Relay disabled (enter owner/name)" });
                     }
                 });
-                section_title(ui, "Motion", false);
-                card(false).show(ui, |ui| {
+                section_title(ui, "Theme", lt());
+                card(lt()).show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.horizontal(|ui| {
+                        for (k, label) in [("system", "System"), ("light", "Light"), ("dark", "Dark")] {
+                            if chip(ui, label, self.prefs.theme == k, lt()) {
+                                self.prefs.theme = k.to_string();
+                                self.save_prefs();
+                            }
+                        }
+                    });
+                    ui.label(RichText::new("System follows the phone's dark mode. Light keeps the default look. Dark applies to every screen.").font(body(12.0)).color(sub()));
+                });
+                section_title(ui, "Motion", lt());
+                card(lt()).show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     let mut v = self.prefs.reduced_motion;
                     if ui.checkbox(&mut v, RichText::new("Reduce motion (no entrance animations on boards and lists)").font(body(14.0))).changed() {
@@ -650,12 +663,12 @@ impl App {
                         self.save_prefs();
                     }
                 });
-                section_title(ui, "Cache", false);
+                section_title(ui, "Cache", lt());
                 let cache = self.root.join("cache");
                 let mdir = self.root.join("matches");
                 ui.label(format!("Source cache: {:.1} MB   ·   Built matches: {:.1} MB", library::dir_size(&cache) as f64 / 1e6, library::dir_size(&mdir) as f64 / 1e6));
                 ui.horizontal(|ui| {
-                    if ghost(ui, "Clear source cache", false) {
+                    if ghost(ui, "Clear source cache", lt()) {
                         let _ = std::fs::remove_dir_all(&cache);
                         self.toast(ui.ctx(), "Source cache cleared");
                     }
@@ -668,9 +681,9 @@ impl App {
                         self.toast(ui.ctx(), "All built matches deleted");
                     }
                 });
-                section_title(ui, "Theme overrides (theme_overrides.toml)", false);
+                section_title(ui, "Theme overrides (theme_overrides.toml)", lt());
                 ui.add(egui::TextEdit::multiline(&mut self.theme_text).font(egui::TextStyle::Monospace).desired_rows(10).desired_width(f32::INFINITY));
-                if ghost(ui, "Save overrides", false) {
+                if ghost(ui, "Save overrides", lt()) {
                     match toml_check(&self.theme_text) {
                         Ok(()) => {
                             let _ = std::fs::write(self.root.join("theme_overrides.toml"), &self.theme_text);
@@ -679,18 +692,18 @@ impl App {
                         Err(e) => self.toast(ui.ctx(), &format!("Invalid TOML: {e}")),
                     }
                 }
-                section_title(ui, "Fallback notes (latest match)", false);
+                section_title(ui, "Fallback notes (latest match)", lt());
                 if let Some(e) = self.lib.entries.first() {
                     for f in e.s.fallbacks.iter().chain(e.s.theme_decisions.iter()) {
-                        ui.label(RichText::new(format!("• {f}")).font(body(12.0)).color(TEXT2));
+                        ui.label(RichText::new(format!("• {f}")).font(body(12.0)).color(sub()));
                     }
                 }
-                section_title(ui, "Metric version log", false);
+                section_title(ui, "Metric version log", lt());
                 ui.label(RichText::new(format!("App metric_version {}", matchhub::METRIC_VERSION)).font(body(12.5)));
                 for e in &self.lib.entries {
-                    ui.label(RichText::new(format!("{} v {} · metric {} · built {}", e.s.home, e.s.away, e.s.metric_version, &e.s.built_at[..16.min(e.s.built_at.len())])).font(body(12.0)).color(TEXT2));
+                    ui.label(RichText::new(format!("{} v {} · metric {} · built {}", e.s.home, e.s.away, e.s.metric_version, &e.s.built_at[..16.min(e.s.built_at.len())])).font(body(12.0)).color(sub()));
                 }
-                ui.label(RichText::new(format!("Import folder: {}", self.import_dir().display())).font(body(12.0)).color(TEXT2));
+                ui.label(RichText::new(format!("Import folder: {}", self.import_dir().display())).font(body(12.0)).color(sub()));
                 ui.add_space(30.0);
             });
         });

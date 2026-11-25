@@ -4,7 +4,8 @@ use hub_app::{App, Screen};
 fn run(app: &mut App, ctx: &egui::Context, frames: usize) {
     for _ in 0..frames {
         let input = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(412.0, 915.0))), ..Default::default() };
-        let _ = ctx.run_ui(input, |ui| app.frame(ui));
+        let mut out = ctx.run_ui(input, |ui| app.frame(ui));
+        out.textures_delta.clear();
     }
 }
 
@@ -49,6 +50,7 @@ fn built_match_screens_and_back_navigation() {
         events: vec![egui::Event::Key { key: egui::Key::BrowserBack, physical_key: None, pressed: true, repeat: false, modifiers: Default::default() }],
         ..Default::default()
     };
-    let _ = ctx.run_ui(input, |ui| app.frame(ui));
+    let mut out = ctx.run_ui(input, |ui| app.frame(ui));
+        out.textures_delta.clear();
     assert_eq!(app.screen(), Screen::Home);
 }

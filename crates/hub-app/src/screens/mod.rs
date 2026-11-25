@@ -191,7 +191,7 @@ impl App {
         card(dark).show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
-                ui.label(RichText::new(if st.running { "● BUILDING" } else { "✓ LAST BUILD" }).font(bold(12.0)).color(if st.running { SECONDARY_VARIANT } else { TEXT2 }));
+                ui.label(RichText::new(if st.running { "● BUILDING" } else { "✓ LAST BUILD" }).font(bold(12.0)).color(if st.running { SECONDARY_VARIANT } else { sub() }));
                 ui.label(RichText::new(&st.step).font(body(12.0)));
             });
             let cur = STEPS.iter().position(|s| *s == st.step).unwrap_or(if st.step == "done" { STEPS.len() } else { 0 });
@@ -220,23 +220,23 @@ impl App {
     pub fn match_card(&mut self, ui: &mut Ui, m: usize, width: f32) -> bool {
         let e: Entry = self.lib.entries[m].clone();
         let mut clicked = false;
-        let r = card(false).show(ui, |ui| ui.vertical(|ui| {
+        let r = card(lt()).show(ui, |ui| ui.vertical(|ui| {
             ui.set_width(width);
             ui.horizontal(|ui| {
                 self.crest(ui, m, 0, 28.0);
                 ui.label(RichText::new(format!("{}  {}–{}  {}", fit_name(&e.s.home, &e.s.home_short, 11), e.s.score[0], e.s.score[1], fit_name(&e.s.away, &e.s.away_short, 11))).font(head(19.0)).color(BLACK));
                 self.crest(ui, m, 1, 28.0);
             });
-            ui.label(RichText::new(format!("{} · {}", if e.s.competition.is_empty() { "Match" } else { &e.s.competition }, e.s.date)).font(body(12.0)).color(TEXT2));
+            ui.label(RichText::new(format!("{} · {}", if e.s.competition.is_empty() { "Match" } else { &e.s.competition }, e.s.date)).font(body(12.0)).color(sub()));
             ui.horizontal_wrapped(|ui| {
-                metric_chip(ui, "npxG", &format!("{:.2}–{:.2}", e.s.npxg[0], e.s.npxg[1]), false);
+                metric_chip(ui, "npxG", &format!("{:.2}–{:.2}", e.s.npxg[0], e.s.npxg[1]), lt());
                 let f = |v: Option<f64>| v.map(|x| format!("{x:.1}")).unwrap_or("–".into());
-                metric_chip(ui, "PPDA", &format!("{}–{}", f(e.s.ppda[0]), f(e.s.ppda[1])), false);
-                metric_chip(ui, "xPts", &format!("{:.1}–{:.1}", e.s.xpts[0], e.s.xpts[1]), false);
+                metric_chip(ui, "PPDA", &format!("{}–{}", f(e.s.ppda[0]), f(e.s.ppda[1])), lt());
+                metric_chip(ui, "xPts", &format!("{:.1}–{:.1}", e.s.xpts[0], e.s.xpts[1]), lt());
             });
         }));
         let resp = r.response.interact(Sense::click());
-        press_overlay(ui, &resp, 18.0, false);
+        press_overlay(ui, &resp, 18.0, lt());
         if resp.clicked() {
             clicked = true;
         }
