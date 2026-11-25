@@ -8,7 +8,7 @@ use egui::{Align, Color32, Layout, Rect, RichText, ScrollArea, Sense, Stroke, Ui
 
 /// Height available to the board canvas for a window of the given height.
 fn canvas_h_hint(window_h: f32) -> f32 {
-    (window_h - 140.0 - 112.0).max(100.0)
+    (window_h - 140.0 - 8.0).max(100.0)
 }
 
 impl App {
@@ -30,7 +30,7 @@ impl App {
                 if ui.add(egui::Button::new(RichText::new("←").font(bold(22.0)).color(WHITE)).fill(Color32::TRANSPARENT).min_size(Vec2::splat(48.0))).clicked() {
                     self.back();
                 }
-                ui.label(RichText::new(&meta.title).font(head(22.0)).color(WHITE));
+                ui.add(egui::Label::new(RichText::new(&meta.title).font(head(if meta.title.chars().count() > 14 { 19.0 } else { 22.0 })).color(WHITE)).truncate());
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     let fill_zoom = (canvas_h_hint(full.height()) / (full.width() * (meta.height / meta.width) as f32)).clamp(1.0, 3.0);
                     if (meta.height / meta.width) < 1.1 && ui.add(egui::Button::new(RichText::new(if self.viewer.zoom > 1.01 { "Fit" } else { "Fill" }).font(semi(14.0)).color(PRIMARY_ON_DARK)).fill(Color32::TRANSPARENT).min_size(Vec2::splat(48.0))).clicked() {
@@ -84,7 +84,7 @@ impl App {
             }
         });
         // ---- board canvas
-        let canvas = Rect::from_min_max(egui::pos2(full.left(), full.top() + 140.0), egui::pos2(full.right(), full.bottom() - 112.0));
+        let canvas = Rect::from_min_max(egui::pos2(full.left(), full.top() + 140.0), egui::pos2(full.right(), full.bottom() - 8.0));
         let resp = ui.interact(canvas, ui.scope_id().with("canvas"), Sense::click_and_drag());
         let aspect = (meta.height / meta.width) as f32;
         // portrait boards fit the width and scroll; landscape boards fit whole
@@ -175,23 +175,13 @@ impl App {
                 child.painter().text(rect.center(), egui::Align2::CENTER_CENTER, "Board data missing: rebuild this match", body(13.0), DARK_TEXT2);
             }
         }
-        // ---- how-to-read footer (always visible)
-        let mut foot = Rect::from_min_max(egui::pos2(full.left(), full.bottom() - 112.0), full.max);
-        if rect.height() < canvas.height() - 130.0 {
-            foot = Rect::from_min_size(egui::pos2(full.left(), rect.bottom() + 8.0), Vec2::new(full.width(), 112.0));
-        }
-        ui.painter().rect_filled(foot.shrink2(Vec2::new(10.0, 4.0)), 16.0, Color32::from_rgba_unmultiplied(255, 255, 255, 14));
-        let mut fu = ui.new_child(egui::UiBuilder::new().max_rect(foot.shrink2(Vec2::new(22.0, 10.0))));
-        fu.label(RichText::new(&meta.how).font(body(12.0)).color(DARK_TEXT2));
-        let hint = if self.viewer.zoom > 1.01 { format!("{:.1}× · double-tap to fit · tap marks for details", self.viewer.zoom) } else { "Pinch to zoom · tap a mark for details · tap a legend entry to hide it".to_string() };
-        fu.label(RichText::new(hint).font(body(12.0)).color(SECONDARY));
         // ---- provenance sheet
         if self.viewer.show_manifest {
-            self.manifest_sheet(ui, m, board, full);
+            self.manifest_sheet(ui, m, board, full, &meta.how);
         }
     }
 
-    fn manifest_sheet(&mut self, ui: &mut Ui, m: usize, board: &str, full: Rect) {
+    fn manifest_sheet(&mut self, ui: &mut Ui, m: usize, board: &str, full: Rect, how: &str) {
         let p = self.lib.entries[m].dir.join("boards").join(format!("{board}.manifest.json"));
         let v: serde_json::Value = std::fs::read_to_string(p).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
         let sheet = Rect::from_min_max(egui::pos2(full.left(), full.top() + full.height() * 0.35), full.max);
@@ -212,6 +202,12 @@ impl App {
                 ui.label(RichText::new(k.to_uppercase()).font(bold(12.0)).color(DARK_TEXT2));
                 ui.label(RichText::new(val).font(body(13.0)).color(WHITE));
             };
+            if !how.is_empty() {
+                ui.label(RichText::new("HOW TO READ").font(bold(12.0)).color(DARK_TEXT2));
+                ui.label(RichText::new(how).font(body(14.0)).color(WHITE));
+                ui.label(RichText::new("Pinch to zoom, tap a mark for details, tap a legend entry to hide it.").font(body(12.0)).color(SECONDARY));
+                ui.add_space(8.0);
+            }
             row(ui, "board", v["board"].as_str().unwrap_or(board).to_string());
             row(ui, "metric_version", v["metric_version"].as_str().unwrap_or("?").to_string());
             if let Some(o) = v["models"].as_object() {
