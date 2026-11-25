@@ -9,7 +9,9 @@ crates/
 docs/
   DATA_HUB_UPGRADE.md   full spec the pipeline implements
   screenshots/          headless renders of every app screen
-.github/workflows/android-apk.yml   CI: tests + APK artifact
+.github/workflows/android-apk.yml        CI: tests + APK artifact
+.github/workflows/scrape-whoscored.yml   headless-browser scrape relay (football-analytics-tutorials)
+scripts/scrape_whoscored.py              relay script, writes data/whoscored/<id>.json.gz
 ```
 
 ## Quick start (desktop)
@@ -63,6 +65,38 @@ A release build without a signing profile is signed with the debug keystore. To 
 - **Soft keyboard:** opened and closed through `AndroidApp::show_soft_input` / `hide_soft_input` when a text field takes focus. The hardware or gesture Back button pops the screen stack.
 - **Data:** stored in the app's internal data dir. Saved WhoScored pages can be imported from `/sdcard/Android/data/com.datahub.app/files/import/`, with `adb push page.html /sdcard/Android/data/com.datahub.app/files/import/`. They then appear on Home.
 - **Exports:** PNGs go to `.../files/exports/`.
+
+## Scrape relay: any WhoScored link works automatically
+
+WhoScored bot-walls plain HTTP. Scraping therefore runs in a real headless Chromium on GitHub Actions, using the Playwright scraper from [ricardoherediaj/football-analytics-tutorials](https://github.com/ricardoherediaj/football-analytics-tutorials) (pinned commit):
+
+1. You paste a WhoScored link in the app.
+2. The app looks for `data/whoscored/<id>.json.gz` in the relay repo (this repo by default).
+3. If the match isn't there, it tries WhoScored directly. If that is blocked, it triggers the `scrape-whoscored` workflow and polls until the run commits the match. This step needs a relay token.
+4. FotMob (colours, crests, xGOT, league name) is fetched from the device. It needs no browser.
+
+The relay token is a fine-grained token with Actions read/write and Contents read, scoped to the relay repo. It is entered in Settings and kept only in the app's private storage, never in the repo. Without a token, run the workflow by hand (Actions > scrape-whoscored > Run workflow > paste the URL); the app then picks the match up by itself. For the CLI, pass `--relay owner/repo` and set the token through the `DATAHUB_RELAY_TOKEN` environment variable.
+
+## Interactive boards
+
+Every board is also written as a vector display list (`<board>.scene.json`). The app draws it natively with its own painter and fonts, instead of showing a picture:
+- crisp at any zoom
+- tap a mark for a tooltip (shots, passes, regains, players, cells, wedges)
+- tap a legend entry to hide or show that layer
+- marks enter with a short staggered motion; Settings > Reduce motion turns this off
+
+Headlines colour team names inline, HighlightText-style, and the xG flow carries a curved annotation arrow on the biggest chance. SVG and PNG output remain available for export.
+
+## UI
+
+The UI follows the guidance from [UI UX Pro Max](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill), with your purple and teal palette kept as the brand:
+- bottom navigation with four labelled vector icons (no emoji icons)
+- 44 to 48 dp touch targets with pressed feedback
+- glass cards on dark surfaces
+- staggered entrance motion of about 350 ms with reduced-motion support
+- text never below 12 px
+- safe areas respected
+- charts that pair colour with shape and labels
 
 ## Getting WhoScored data
 
