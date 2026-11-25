@@ -78,27 +78,17 @@ fn crest(s: &mut Svg, cx: f64, cy: f64, r: f64, data: &Option<String>, name: &st
 pub fn header(s: &mut Svg, c: &Ctx, title: &str, subtitle: &str, scope: Scope) {
     let w = s.w;
     s.rrect(18.0, 14.0, w - 36.0, 120.0, 10.0, "#0e0b14", "#2a2633", 1.0);
-    // creator logo
-    match &c.logo {
-        Some(h) => s.image(36.0, 30.0, 82.0, 82.0, h),
-        None => {
-            s.circle(77.0, 71.0, 40.0, "none", "#d9d9e0", 2.0, "");
-            s.h(77.0, 84.0, "T", 40.0, "#d9d9e0", Anchor::Middle);
-            s.t(77.0, 101.0, "TACTICAL", 7.5, 600, "#d9d9e0", Anchor::Middle);
-        }
-    }
-    s.t(138.0, 44.0, "MATCH VISUAL", 13.0, 700, theme::TEXT, Anchor::Start);
     // headline auto-shrink to fit left area
     let right_w = 520.0;
-    let max_w = w - 138.0 - right_w - 30.0;
+    let max_w = w - 36.0 - right_w - 30.0;
     let mut size = 44.0;
     while text_w(title, size, true) > max_w && size > 24.0 {
         size -= 2.0;
     }
     // HighlightText-style headline: team names inside the sentence carry their colours
     let runs = highlight_runs(title, &[(c.name(Side::Home), c.col(Side::Home).to_string()), (c.short(Side::Home), c.col(Side::Home).to_string()), (c.name(Side::Away), c.col(Side::Away).to_string()), (c.short(Side::Away), c.col(Side::Away).to_string())]);
-    s.text_runs(138.0, 88.0, &runs, size, 700, Anchor::Start, HEAD);
-    s.t(138.0, 114.0, subtitle, 13.0, 400, theme::MUTED, Anchor::Start);
+    s.text_runs(36.0, 88.0, &runs, size, 700, Anchor::Start, HEAD);
+    s.t(36.0, 114.0, subtitle, 13.0, 400, theme::MUTED, Anchor::Start);
     // teams + score
     let rx = w - 60.0;
     let cy = 52.0;
@@ -118,16 +108,14 @@ pub fn header(s: &mut Svg, c: &Ctx, title: &str, subtitle: &str, scope: Scope) {
         Scope::Player(t) => format!("PLAYER VIEW · {}", c.name(t).to_uppercase()),
     };
     s.t(rx - 470.0, 104.0, &scope_s, 10.5, 700, theme::MUTED, Anchor::Start);
-    s.t(rx, 104.0, &format!("CREATED BY {}", c.creator.to_uppercase()), 10.5, 700, theme::MUTED, Anchor::End);
     // team-colour rule
     s.rect(18.0, 136.0, (w - 36.0) / 2.0, 4.0, &hc, "");
     s.rect(18.0 + (w - 36.0) / 2.0, 136.0, (w - 36.0) / 2.0, 4.0, &ac, "");
 }
 
-pub fn footer(s: &mut Svg, c: &Ctx, how: &str) {
+pub fn footer(s: &mut Svg, _c: &Ctx, how: &str) {
     s.how = how.to_string();
     let h = s.h;
-    let w = s.w;
     // wrap the how-to-read sentence at ~170 chars
     let mut lines = vec![];
     let mut cur = String::new();
@@ -148,7 +136,6 @@ pub fn footer(s: &mut Svg, c: &Ctx, how: &str) {
     for (i, l) in lines.iter().enumerate() {
         s.t(36.0, h - 24.0 - (n - 1.0 - i as f64) * 18.0, l, 13.0, 400, "#cfcdd8", Anchor::Start);
     }
-    s.t(w - 36.0, h - 56.0 - (n - 1.0) * 18.0, &c.footer_tag, 11.0, 500, theme::GREY, Anchor::End);
 }
 
 pub fn panel(s: &mut Svg, x: f64, y: f64, w: f64, h: f64) {

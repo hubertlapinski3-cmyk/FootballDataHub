@@ -191,6 +191,18 @@ fn main() {
     let o = |n: &str| out.join(n).display().to_string();
     let sample = h.app.lib.entries.iter().position(|e| e.s.source == "statsbomb").unwrap_or(0);
 
+    // BOARDS=id1,id2: render those boards whole (viewer, tall window) and stop
+    if let Ok(ids) = std::env::var("BOARDS") {
+        for id in ids.split(',') {
+            let meta = h.app.lib.entries[sample].s.boards.iter().find(|b| b.id == id).cloned();
+            let Some(meta) = meta else { continue };
+            h.size = Vec2::new(412.0, (412.0 * (meta.height / meta.width) as f32 + 300.0).min(4000.0));
+            h.app.stack = vec![Screen::Home, Screen::Hub(sample), Screen::Viewer { m: sample, board: id.into() }];
+            h.app.viewer = hub_app::ViewerState::fresh(-10.0);
+            h.shot(&o(&format!("board_{id}.png")), 0.0);
+        }
+        return;
+    }
     h.app.stack = vec![Screen::Onboarding];
     h.shot(&o("1_onboarding.png"), 0.0);
     h.app.stack = vec![Screen::Home];
