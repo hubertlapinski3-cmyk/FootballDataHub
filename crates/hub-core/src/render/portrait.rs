@@ -260,6 +260,10 @@ fn leaf(items: &[usize], b: Box4, sc: &Scene, x: f32, y: f32, sx: f32, sy: f32, 
     }
     for &i in items {
         let mut q = boost(xf(&sc.prims[i], b.0, b.1, sx, sy, x, y), TEXT_BOOST);
+        // chart text is capped: a label scaled up past 24 px dominates a phone screen and collides with its neighbours
+        if let Prim::T { sz, .. } = &mut q {
+            *sz = sz.min(24.0);
+        }
         // data lines keep a legible weight after scaling
         if let Prim::L { sw, t, l, .. } = &mut q {
             if *t >= 0 || *l >= 0 {
@@ -340,6 +344,199 @@ fn place(n: &Node, sc: &Scene, y: f32, out: &mut Placed) -> f32 {
     }
 }
 
+/// Phone column limits for text: 16 px gutters, as the app's own gutter.
+const TEXT_LO: f32 = 16.0;
+const TEXT_HI: f32 = 624.0;
+/// Smallest text the phone layout accepts (the audit test uses the same bound).
+const TEXT_MIN: f32 = 11.5;
+
+fn text_extent(runs: &[(String, String)], sz: f32, hd: bool) -> f32 {
+    runs.iter().map(|r| text_w(&r.0, sz as f64, hd) as f32).sum()
+}
+
+/// Greedy word wrap that keeps each word's colour. Lines never exceed `max_w` unless a single word does.
+fn wrap_runs(runs: &[(String, String)], sz: f32, hd: bool, max_w: f32) -> Vec<Vec<(String, String)>> {
+    let mut lines: Vec<Vec<(String, String)>> = vec![];
+    let mut cur: Vec<(String, String)> = vec![];
+    let mut cur_txt = String::new();
+    for (txt, col) in runs {
+        for word in txt.split_whitespace() {
+            let cand = if cur_txt.is_empty() { word.to_string() } else { format!("{cur_txt} {word}") };
+            if !cur_txt.is_empty() && text_w(&cand, sz as f64, hd) as f32 > max_w {
+                lines.push(std::mem::take(&mut cur));
+                cur_txt.clear();
+                cur.push((word.to_string(), col.clone()));
+                cur_txt.push_str(word);
+            } else {
+                let lead = if cur.is_empty() { "" } else { " " };
+                cur.push((format!("{lead}{word}"), col.clone()));
+                cur_txt = cand;
+            }
+        }
+    }
+    if !cur.is_empty() {
+        lines.push(cur);
+    }
+    lines
+}
+
+/// Moves every primitive below `y0` down by `dh` (the whole lower board moves together, so nothing is
+/// squeezed or overlapped when a text block grows).
+fn shift_below(prims: &mut [Prim], y0: f32, dh: f32) {
+    for p in prims.iter_mut() {
+        match p {
+            Prim::R { y, .. } | Prim::C { y, .. } | Prim::T { y, .. } | Prim::I { y, .. } => {
+                if *y > y0 + 0.5 {
+                    *y += dh;
+                }
+            }
+            Prim::L { p, .. } | Prim::P { p, .. } => {
+                if p.iter().all(|q| q[1] > y0 + 0.5) {
+                    for q in p.iter_mut() {
+                        q[1] += dh;
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Keeps every text run inside the phone column. A run that is too wide is first shrunk (down to
+/// TEXT_MIN); if it still does not fit it is wrapped onto more lines and the board below moves down.
+/// Returns the total height added and the (y, dh) shifts, so legend hit areas can follow.
+fn fit_texts(prims: &mut Vec<Prim>) -> (f32, Vec<(f32, f32)>) {
+    let mut total = 0.0f32;
+    let mut shifts: Vec<(f32, f32)> = vec![];
+    let mut order: Vec<usize> = (0..prims.len()).filter(|&i| matches!(prims[i], Prim::T { .. })).collect();
+    let ty = |p: &Prim| if let Prim::T { y, .. } = p { *y } else { 0.0 };
+    order.sort_by(|&a, &b| ty(&prims[a]).total_cmp(&ty(&prims[b])));
+    for i in order {
+        let Prim::T { x, y, runs, sz, w, hd, a, o, l } = prims[i].clone() else { continue };
+        // a position that is not a number cannot be placed: drop the run rather than panic
+        if !x.is_finite() || !y.is_finite() || !sz.is_finite() {
+            if let Prim::T { runs, .. } = &mut prims[i] {
+                runs.clear();
+            }
+            continue;
+        }
+        let tw = text_extent(&runs, sz, hd);
+        // the anchor decides how much room the text has around its x
+        let room = |x: f32| match a {
+            0 => TEXT_HI - x,
+            1 => 2.0 * (x - TEXT_LO).min(TEXT_HI - x),
+            _ => x - TEXT_LO,
+        };
+        let x = match a {
+            0 => x.clamp(TEXT_LO, (TEXT_HI - tw).max(TEXT_LO)),
+            1 => x.clamp(TEXT_LO + tw / 2.0, (TEXT_HI - tw / 2.0).max(TEXT_LO + tw / 2.0)),
+            _ => x.clamp((TEXT_LO + tw).min(TEXT_HI), TEXT_HI),
+        };
+        let avail = room(x).max(40.0);
+        if tw <= avail {
+            prims[i] = Prim::T { x, y, runs, sz, w, hd, a, o, l };
+            continue;
+        }
+        let shrink = avail / tw * 0.995;
+        if sz * shrink >= TEXT_MIN {
+            prims[i] = Prim::T { x, y, runs, sz: sz * shrink, w, hd, a, o, l };
+            continue;
+        }
+        // wrap: the first line stays in place, further lines go below and the board moves down
+        let lines = wrap_runs(&runs, sz, hd, avail);
+        let lh = sz * 1.35;
+        let dh = (lines.len().saturating_sub(1)) as f32 * lh;
+        if dh > 0.0 {
+            shift_below(prims, y, dh);
+            shifts.push((y, dh));
+            total += dh;
+        }
+        let mut first = true;
+        for (k, line) in lines.into_iter().enumerate() {
+            let p = Prim::T { x, y: y + k as f32 * lh, runs: line, sz, w, hd, a, o, l };
+            if first {
+                prims[i] = p;
+                first = false;
+            } else {
+                prims.push(p);
+            }
+        }
+    }
+    let dropped = decollide(prims);
+    let _ = dropped;
+    (total, shifts)
+}
+
+/// Text box of a run at its current position (see the layout audit in tests/layout.rs).
+fn glyph_box(p: &Prim) -> Option<(f32, f32, f32, f32, f32)> {
+    let Prim::T { x, y, runs, sz, hd, a, .. } = p else { return None };
+    if runs.is_empty() {
+        return None;
+    }
+    let w = text_extent(runs, *sz, *hd);
+    let (x0, x1) = match a {
+        0 => (*x, x + w),
+        1 => (x - w / 2.0, x + w / 2.0),
+        _ => (x - w, *x),
+    };
+    // the same box the layout audit uses: one em above the baseline, 0.3 em below
+    Some((x0, y - sz, x1, y + sz * 0.3, *sz))
+}
+
+/// Chart labels that land on each other: the smaller one is nudged up or down in small steps to a free
+/// spot, and removed if none is free. Headings (26 px and up) are never moved or removed; chart text is capped at 24 px.
+/// Returns how many labels were dropped.
+fn decollide(prims: &mut Vec<Prim>) -> usize {
+    let mut dropped = 0;
+    let idx: Vec<usize> = (0..prims.len()).filter(|&i| glyph_box(&prims[i]).is_some()).collect();
+    for k in 0..idx.len() {
+        for m in k + 1..idx.len() {
+            let (i, j) = (idx[k], idx[m]);
+            let (Some(a), Some(b)) = (glyph_box(&prims[i]), glyph_box(&prims[j])) else { continue };
+            let overlap = |p: (f32, f32, f32, f32, f32), q: (f32, f32, f32, f32, f32)| p.2.min(q.2) - p.0.max(q.0) > 2.0 && p.3.min(q.3) - p.1.max(q.1) > 2.0;
+            if !overlap(a, b) {
+                continue;
+            }
+            // the smaller text moves; two headings are left alone (and reported by the audit)
+            let (mv, other) = if a.4 < b.4 { (i, j) } else { (j, i) };
+
+            if prims_size(&prims[mv]) >= 26.0 {
+                continue;
+            }
+            let base = prims[mv].clone();
+            let mut placed = false;
+            for dy in [4.0f32, -4.0, 8.0, -8.0, 12.0, -12.0, 16.0, -16.0, 20.0, -20.0] {
+                let mut cand = base.clone();
+                if let Prim::T { y, .. } = &mut cand {
+                    *y += dy;
+                }
+                let cb = glyph_box(&cand).unwrap();
+                let clear = idx.iter().filter(|&&q| q != mv).all(|&q| match glyph_box(&prims[q]) {
+                    Some(qb) => !(cb.2.min(qb.2) - cb.0.max(qb.0) > 2.0 && cb.3.min(qb.3) - cb.1.max(qb.1) > 2.0),
+                    None => true,
+                });
+                if clear {
+                    prims[mv] = cand;
+                    placed = true;
+                    break;
+                }
+            }
+            if !placed {
+                if let Prim::T { runs, .. } = &mut prims[mv] {
+                    runs.clear();
+                    dropped += 1;
+                }
+            }
+            let _ = other;
+        }
+    }
+    prims.retain(|p| !matches!(p, Prim::T { runs, .. } if runs.is_empty()));
+    dropped
+}
+
+fn prims_size(p: &Prim) -> f32 {
+    if let Prim::T { sz, .. } = p { *sz } else { 0.0 }
+}
+
 /// Recompose a landscape scene into a single phone-width column.
 /// Returns `None` for scenes that are already portrait.
 pub fn reflow(sc: &Scene) -> Option<Scene> {
@@ -408,7 +605,7 @@ pub fn reflow(sc: &Scene) -> Option<Scene> {
         }
         for l in lines {
             prims.push(Prim::T { x: 24.0, y, runs: l, sz: size, w: 700, hd: true, a: 0, o: 1.0, l: -1 });
-            y += size + 6.0;
+            y += size * 1.3;
         }
     }
     if let Some((txt, col)) = &subtitle {
@@ -422,7 +619,7 @@ pub fn reflow(sc: &Scene) -> Option<Scene> {
         }
         y += 2.0;
         prims.push(Prim::T { x: 24.0, y: y + size, runs: vec![(line, col.clone())], sz: size, w: 400, hd: false, a: 0, o: 1.0, l: -1 });
-        y += size + 6.0;
+        y += size * 1.3;
     }
     // The viewer's own top bar carries the board title and controls, so the poster chrome is gone:
     // no header box, no crests / score cluster. A thin team-colour divider closes the intro.
@@ -463,13 +660,22 @@ pub fn reflow(sc: &Scene) -> Option<Scene> {
     let body_h = place(&root, sc, head_h + 30.0, &mut placed);
     prims.extend(placed.prims);
 
-    // ---- legend hit areas follow their block
+    // ---- keep all text inside the column (may wrap and move the board below it down)
+    let (grow, shifts) = fit_texts(&mut prims);
+
+    // ---- legend hit areas follow their block, and any text shift above them
     let mut legend = vec![];
     for h in &sc.legend {
         let (cx, cy) = (h.x + h.w / 2.0, h.y + h.h / 2.0);
         if let Some((_, ox, oy, sx, sy, tx, ty)) = placed.maps.iter().find(|(b, ..)| cx >= b.0 - 2.0 && cx <= b.2 + 2.0 && cy >= b.1 - 2.0 && cy <= b.3 + 2.0) {
-            legend.push(LegendHit { layer: h.layer, x: (h.x - ox) * sx + tx, y: (h.y - oy) * sy + ty, w: h.w * sx, h: h.h * sy });
+            let mut y = (h.y - oy) * sy + ty;
+            for (y0, dh) in &shifts {
+                if y > *y0 + 0.5 {
+                    y += dh;
+                }
+            }
+            legend.push(LegendHit { layer: h.layer, x: (h.x - ox) * sx + tx, y, w: h.w * sx, h: h.h * sy });
         }
     }
-    Some(Scene { w: PW, h: head_h + 30.0 + body_h + 36.0, prims, tips: sc.tips.clone(), layers: sc.layers.clone(), legend, footer_start: 0 })
+    Some(Scene { w: PW, h: head_h + 30.0 + body_h + 36.0 + grow, prims, tips: sc.tips.clone(), layers: sc.layers.clone(), legend, footer_start: 0 })
 }

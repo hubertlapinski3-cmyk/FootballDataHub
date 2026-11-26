@@ -437,7 +437,7 @@ pub fn funnel(c: &Ctx) -> Board {
         s.t(x0 + cw / 2.0, y + 34.0, &l.to_uppercase(), 17.0, 700, theme::TEXT, Anchor::Middle);
         for (k, sd) in Side::both().iter().enumerate() {
             let f = &c.a.t(*sd).funnel;
-            let ry = y + 52.0 + k as f64 * 36.0;
+            let ry = y + 52.0 + k as f64 * 46.0;
             let w = (f[i] as f64 / mx * bar_w).max(3.0);
             s.t(x0 + 24.0, ry + 20.0, &c.name(*sd).to_uppercase(), 14.0, 700, c.col(*sd), Anchor::Start);
             s.h(x0 + 200.0, ry + 23.0, &f[i].to_string(), 28.0, theme::TEXT, Anchor::End);
@@ -707,16 +707,17 @@ pub fn player_card(c: &Ctx, p: &PlayerStats) -> Board {
         (ms[i].display.clone(), ms[i].label.to_string(), format!("{} of {} in pool", rank, n_pool))
     }).collect();
     kpis.push((format!("{:.0}", p.minutes), "Minutes played".into(), String::new()));
-    let (cw, ch, gap) = ((PW - 40.0 - 12.0) / 2.0, 118.0, 12.0);
+    let (cw, ch, gap) = ((PW - 40.0 - 12.0) / 2.0, 128.0, 12.0);
     for (k, (v, l, r)) in kpis.iter().enumerate() {
         let x = 20.0 + (k % 2) as f64 * (cw + gap);
         let yy = y + (k / 2) as f64 * (ch + gap);
         s.rrect(x, yy, cw, ch, 16.0, CARD, "none", 0.0);
+        // value box ends ~16 px under its baseline; the label starts below that, the badge below the label
         s.h(x + 18.0, yy + 56.0, v, 54.0, if k < 3 { SAGE } else { PAPER }, Anchor::Start);
-        s.t(x + 18.0, yy + 82.0, l, 14.0, 600, PAPER, Anchor::Start);
+        s.t(x + 18.0, yy + 92.0, l, 14.0, 600, PAPER, Anchor::Start);
         if !r.is_empty() {
-            s.rrect(x + 18.0, yy + 90.0, 112.0, 20.0, 10.0, CARD_HI, "none", 0.0);
-            s.t(x + 74.0, yy + 104.0, r, 11.5, 500, SOFT, Anchor::Middle);
+            s.rrect(x + 18.0, yy + 102.0, 112.0, 20.0, 10.0, CARD_HI, "none", 0.0);
+            s.t(x + 74.0, yy + 116.0, r, 11.5, 500, SOFT, Anchor::Middle);
         }
     }
     y += 2.0 * ch + gap + 34.0;
@@ -835,7 +836,7 @@ pub fn player_card(c: &Ctx, p: &PlayerStats) -> Board {
     s.rrect(20.0, y, PW - 40.0, 76.0, 16.0, CARD, "none", 0.0);
     s.t(36.0, y + 30.0, "Average touch", 12.5, 500, SOFT, Anchor::Start);
     s.t(36.0, y + 54.0, &format!("{:.0} m upfield, {:.0} m {} of centre", p.avg_x, lr.abs(), if lr >= 0.0 { "left" } else { "right" }), 16.0, 700, PAPER, Anchor::Start);
-    s.t(PW - 36.0, y + 30.0, "Defensive actions", 12.5, 500, SOFT, Anchor::End);
+    s.t(PW - 36.0, y + 24.0, "Defensive actions", 12.5, 500, SOFT, Anchor::End);
     s.h(PW - 36.0, y + 60.0, &n_def.to_string(), 30.0, PAPER, Anchor::End);
     y += 76.0 + 34.0;
 

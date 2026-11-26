@@ -714,21 +714,23 @@ pub fn match_stats(c: &Ctx) -> Board {
         ("PRESSING (PPDA)", "Lower PPDA = more aggressive press. Under 8 is an elite press, 8–12 a medium block, above 12 a low block."),
         ("DEFENSIVE ACTIONS", "Tackles and interceptions describe ground duels. Blocks stop shots with a body. Recoveries and clearances show how pressure was escaped."),
     ];
-    for (i, (t, body)) in cols.iter().enumerate() {
-        let x = 800.0 + i as f64 * 255.0;
-        s.t(x, 690.0, t, 11.5, 800, theme::TEXT, Anchor::Start);
+    // one row per explanation, full panel width: the rows stack, so no two lines can share a band
+    let mut yy = 684.0;
+    for (t, body) in cols.iter() {
+        s.t(800.0, yy, t, 12.0, 800, theme::TEXT, Anchor::Start);
+        yy += 20.0;
         let mut line = String::new();
-        let mut yy = 716.0;
         for w in body.split_whitespace() {
-            if line.len() + w.len() > 34 {
-                s.t(x, yy, &line, 11.5, 400, theme::MUTED, Anchor::Start);
+            if line.len() + w.len() > 100 {
+                s.t(800.0, yy, line.trim_end(), 12.0, 400, theme::MUTED, Anchor::Start);
                 yy += 18.0;
                 line.clear();
             }
             line.push_str(w);
             line.push(' ');
         }
-        s.t(x, yy, &line, 11.5, 400, theme::MUTED, Anchor::Start);
+        s.t(800.0, yy, line.trim_end(), 12.0, 400, theme::MUTED, Anchor::Start);
+        yy += 30.0;
     }
     footer(&mut s, c, "One page of counted actions for both sides, plus the pressing rate. Every figure is a count from the event stream over the whole match: each pair of bars splits the row between the two sides.");
     Board::new("20_match_statistics", "Match statistics", s)
