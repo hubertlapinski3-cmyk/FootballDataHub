@@ -302,7 +302,7 @@ pub fn section_title(ui: &mut Ui, t: &str, dark: bool) {
     ui.add_space(8.0);
 }
 
-/// Screen backdrop for dark surfaces: deep navy fading through indigo, with a soft teal glow low-right.
+/// Screen backdrop for dark surfaces: flat `INK` with the halftone motif top right (no gradient, no glow).
 pub fn backdrop(ui: &Ui, rect: egui::Rect) {
     ui.painter().rect_filled(rect, 0.0, INK);
     halftone(ui, egui::pos2(rect.right() - 30.0, rect.top() + 70.0), 170.0, FIXER, 0.55);
@@ -356,17 +356,6 @@ pub fn tab_row(ui: &mut Ui, labels: &[&str], active: usize) -> Option<usize> {
     hit
 }
 
-/// Paint a vertical gradient (top -> bottom) into a rect.
-pub fn gradient(ui: &Ui, rect: egui::Rect, top: Color32, bottom: Color32) {
-    let mut mesh = egui::Mesh::default();
-    mesh.colored_vertex(rect.left_top(), top);
-    mesh.colored_vertex(rect.right_top(), top);
-    mesh.colored_vertex(rect.left_bottom(), bottom);
-    mesh.colored_vertex(rect.right_bottom(), bottom);
-    mesh.add_triangle(0, 1, 2);
-    mesh.add_triangle(1, 3, 2);
-    ui.painter().add(egui::Shape::mesh(mesh));
-}
 
 /// Monogram disc used when no crest image is available.
 pub fn monogram(ui: &mut Ui, name: &str, col: Color32, size: f32) {

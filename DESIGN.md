@@ -98,3 +98,16 @@ Team colours on boards come from the match theme (club colours) and are data, no
 - System font scale: NativeActivity does not expose it; the app offers its own text size instead.
 - `systemGestureExclusion` is not reachable from egui on NativeActivity; edge swipes go to the system.
 - Time-frame pill selectors (7D / 30D / 90D / ALL) do not apply: every board covers one match.
+
+## Polish checks and credit
+
+The UI went through a redline polish in the style of the unslop method (spacing, colour, icons, copy,
+type, layout details, motion). The method is by Damir Sokolovsky (@heydamir),
+<https://heydamir.design/unslop>, licensed CC-BY-4.0; no text of it is reproduced here, only the checks:
+
+- Spacing on a 4dp grid; section titles 24dp above and 8dp below; nested radii (outer radius minus padding, never below 4dp).
+- Colour: chrome stays in the `PRINT` / `INK` neutral ramps with `FIXER` / `SAGE` as the only accent. No gradients or glows on chrome.
+- Icons: 2.4dp strokes, drawn in the colour of their text role, in fixed-size slots. No emoji in UI strings.
+- Copy: no trailing period on short labels and captions; no exclamation marks.
+- Type: sentence case for labels (no tracked all-caps); weights Regular, Medium and SemiBold; digits tabular; no italics.
+- Motion: exponential fling decay, eased zoom (`1 - 0.001^dt`), 0.18 s legend fade, one cubic-out entrance stagger; all of it off under reduced motion.

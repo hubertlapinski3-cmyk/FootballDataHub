@@ -412,7 +412,17 @@ fn leaf(items: &[usize], b: Box4, sc: &Scene, x: f32, y: f32, sx: f32, sy: f32, 
         let mut q = boost(xf(&sc.prims[i], b.0, b.1, sx, sy, x, y), TEXT_BOOST);
         // chart text is capped: a label scaled up past 24 px dominates a phone screen and collides with its neighbours
         if let Prim::T { sz, .. } = &mut q {
+            // a wide plot shrunk to the column gets a slightly larger floor so its ticks read without zooming
+            if sx < 0.6 && b.2 - b.0 > 900.0 {
+                *sz = sz.max(15.0);
+            }
             *sz = sz.min(24.0);
+        }
+        // legend line keys are short strokes beside a label: keep them clearly coloured
+        if let Prim::L { p, sw, .. } = &mut q {
+            if p.len() == 2 && (p[0][1] - p[1][1]).abs() < 0.5 && (p[1][0] - p[0][0]).abs() <= 30.0 && *sw >= 0.9 {
+                *sw = sw.max(2.6);
+            }
         }
         // data lines keep a legible weight after scaling
         if let Prim::L { sw, t, l, .. } = &mut q {
@@ -483,6 +493,19 @@ fn place(n: &Node, sc: &Scene, y: f32, out: &mut Placed) -> f32 {
                 let used = total * s;
                 let (_, h) = place_scaled(n, sc, (PW - used) / 2.0, y, s, out);
                 h
+            } else if c.iter().all(|k| matches!(k, Node::Leaf { b, .. } if b.3 - b.1 < 34.0)) {
+                // a one-line strip of entries (a legend) that does not fit one row stays one strip: its entries
+                // are packed and wrapped as a row, keys beside their labels, not stacked one per line
+                let mut items: Vec<usize> = vec![];
+                let mut bb: Option<Box4> = None;
+                for k in c {
+                    if let Node::Leaf { items: it, b } = k {
+                        items.extend(it.iter().copied());
+                        bb = Some(bb.map_or(*b, |u| union(u, *b)));
+                    }
+                }
+                items.sort_unstable();
+                place(&Node::Leaf { items, b: bb.unwrap() }, sc, y, out)
             } else {
                 let mut yy = y;
                 for k in c {

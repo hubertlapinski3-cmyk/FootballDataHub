@@ -322,7 +322,7 @@ impl App {
             ui.label(RichText::new("Consistency gates").font(bold(12.0)).color(DARK_TEXT2));
             for c in v["checks"].as_array().cloned().unwrap_or_default() {
                 let ok = c["ok"].as_bool().unwrap_or(false);
-                ui.label(RichText::new(format!("{} {}: {}", if ok { "✓" } else { "✗" }, c["name"].as_str().unwrap_or(""), c["detail"].as_str().unwrap_or(""))).font(body(12.0)).color(if ok { SECONDARY } else { Color32::from_rgb(0xff, 0x6b, 0x81) }));
+                ui.label(RichText::new(format!("{}: {}: {}", if ok { "Pass" } else { "Fail" }, c["name"].as_str().unwrap_or(""), c["detail"].as_str().unwrap_or(""))).font(body(12.0)).color(if ok { SECONDARY } else { ERROR_ROOM }));
             }
         });
     }

@@ -21,7 +21,9 @@ impl App {
             ui.add_space(36.0);
             ui.vertical_centered(|ui| {
                 ui.label(RichText::new("Data Hub").font(bold(13.0)).color(SECONDARY));
-                ui.label(RichText::new("Every match, read like a broadcast").font(head(40.0)).color(WHITE));
+                // the headline gives back size as the text-size setting grows, so its longest word never breaks mid-word
+                let k = (1.2 / (text_scale_pct() as f32 / 100.0)).min(1.0);
+                ui.label(RichText::new("Every match, read like a broadcast").font(head(40.0 * k)).color(WHITE));
                 ui.add_space(4.0);
                 ui.label(RichText::new("31 analysis boards and a written report from one WhoScored match").font(body(15.0)).color(DARK_TEXT2));
             });
@@ -587,13 +589,7 @@ impl App {
                 let (cl, cr) = (self.team_col(l.0, l.1), self.team_col(r.0, r.1));
                 ui.add_space(8.0);
                 ui.set_max_width(ui.available_width() - 26.0);
-                let hw = ui.available_width();
-                ui.allocate_ui_with_layout(Vec2::new(hw, 0.0), Layout::top_down(Align::Min), |ui| {
-                    ui.columns(2, |c| {
-                        c[0].add(egui::Label::new(RichText::new(tl.name.clone()).font(head(22.0)).color(cl)).truncate());
-                        c[1].with_layout(Layout::right_to_left(Align::Min), |ui| ui.add(egui::Label::new(RichText::new(tr.name.clone()).font(head(22.0)).color(cr)).truncate()));
-                    });
-                });
+                versus_header(ui, &tl.name, cl, &tr.name, cr, 22.0);
                 let ratio = |x: (usize, usize)| format!("{}/{}", x.0, x.1);
                 let mut rows: Vec<(&str, String, String, f64, f64, Option<&str>)> = vec![];
                 if self.compare.groups[0] {
@@ -736,13 +732,7 @@ impl App {
         let (Some(l), Some(r)) = (find(self.compare.pl_left), find(self.compare.pl_right)) else { return };
         let (cl, cr) = (self.team_col(l.0, l.1.side), self.team_col(r.0, r.1.side));
         ui.add_space(8.0);
-        let hw = ui.available_width() - 26.0;
-        ui.allocate_ui_with_layout(Vec2::new(hw, 0.0), Layout::top_down(Align::Min), |ui| {
-            ui.columns(2, |c| {
-                c[0].add(egui::Label::new(RichText::new(l.1.short.clone()).font(head(20.0)).color(cl)).truncate());
-                c[1].with_layout(Layout::right_to_left(Align::Min), |ui| ui.add(egui::Label::new(RichText::new(r.1.short.clone()).font(head(20.0)).color(cr)).truncate()));
-            });
-        });
+        versus_header(ui, &l.1.short, cl, &r.1.short, cr, 20.0);
         section_title(ui, "Profile per 90 minutes", true);
         dual_radar(ui, &l.1, &r.1, cl, cr);
         let groups = ["Attacking & Shooting", "Passing & Progression", "Involvement & Defending"];
@@ -777,7 +767,7 @@ impl App {
     // ------------------------------------------------------------------ 8 settings
     pub fn settings(&mut self, ui: &mut Ui) {
         egui::Frame::new().inner_margin(egui::Margin::symmetric(16, 4)).show(ui, |ui| {
-            if top_bar(ui, "Settings & sources", lt()) {
+            if top_bar(ui, "Settings", lt()) {
                 self.back();
             }
             ScrollArea::vertical().id_salt("settings").show(ui, |ui| {
@@ -1052,6 +1042,19 @@ pub fn draw_icon_col(ui: &Ui, r: egui::Rect, kind: &str, colr: Color32) {
 }
 
 /// One-line scope / metric badge for a hub card: who and what the board covers.
+/// Two names facing each other across the row: left-aligned and right-aligned inside the content width
+/// less the scrollbar gutter, shrunk together when they would meet.
+fn versus_header(ui: &mut Ui, left: &str, lc: Color32, right: &str, rc: Color32, size: f32) {
+    let w = ui.available_width() - 28.0;
+    let width = |ui: &Ui, t: &str, k: f32| ui.painter().layout_no_wrap(t.to_string(), head(size * k), lc).size().x;
+    let total = width(ui, left, 1.0) + width(ui, right, 1.0) + 16.0;
+    let k = if total > w { (w / total).clamp(0.55, 1.0) } else { 1.0 };
+    let h = ui.painter().layout_no_wrap("Ag".to_string(), head(size * k), lc).size().y;
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(w, h + 4.0), Sense::hover());
+    ui.painter().text(rect.left_top(), egui::Align2::LEFT_TOP, left, head(size * k), lc);
+    ui.painter().text(rect.right_top(), egui::Align2::RIGHT_TOP, right, head(size * k), rc);
+}
+
 /// Per-90 profile on eight axes; pass completion is already a ratio.
 fn profile(p: &library::PlayerMeta) -> [f64; 8] {
     let e = p.extra.clone().unwrap_or_default();
