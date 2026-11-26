@@ -347,5 +347,5 @@ fn league_config_matches_the_league_slugs_the_ingest_reads() {
     let pl = &cfg["leagues"][5];
     assert_eq!((pl["region_id"].as_u64(), pl["tournament_id"].as_u64(), pl["season_id"].as_u64(), pl["stage_id"].as_u64()), (Some(22), Some(18), Some(11160), Some(25564)));
     let ek = &cfg["leagues"][6];
-    assert_eq!((ek["region_id"].as_u64(), ek["tournament_id"].as_u64()), (Some(176), Some(76)));
+    assert_eq!((ek["region_id"].as_u64(), ek["tournament_id"].as_u64(), ek["season_id"].as_u64(), ek["stage_id"].as_u64()), (Some(176), Some(76), Some(11155), Some(25559)));
 }

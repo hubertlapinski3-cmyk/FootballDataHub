@@ -7,6 +7,6 @@
     {"slug": "serie-a", "name": "Serie A", "url": "https://www.whoscored.com/regions/108/tournaments/5/italy-serie-a", "region_id": 108, "tournament_id": 5},
     {"slug": "ligue-1", "name": "Ligue 1", "url": "https://www.whoscored.com/regions/74/tournaments/22/france-ligue-1", "region_id": 74, "tournament_id": 22},
     {"slug": "pro-league", "name": "Belgian Pro League", "url": "https://www.whoscored.com/regions/22/tournaments/18/seasons/11160/stages/25564/show/belgium-jupiler-pro-league-2026-2027", "region_id": 22, "tournament_id": 18, "season_id": 11160, "stage_id": 25564},
-    {"slug": "ekstraklasa", "name": "Ekstraklasa", "url": "https://www.whoscored.com/Regions/176/Tournaments/76/Polonia-Ekstraklasa", "region_id": 176, "tournament_id": 76}
+    {"slug": "ekstraklasa", "name": "Ekstraklasa", "url": "https://www.whoscored.com/regions/176/tournaments/76/seasons/11155/stages/25559/show/poland-ekstraklasa-2026-2027", "region_id": 176, "tournament_id": 76, "season_id": 11155, "stage_id": 25559}
   ]
 }
