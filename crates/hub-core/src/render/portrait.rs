@@ -150,7 +150,7 @@ fn group_units(body: &[usize], sc: &Scene) -> Vec<(usize, Box4)> {
     };
     let rect = |p: &Prim| -> Option<Box4> {
         if let Prim::R { x, y, w, h, .. } = p {
-            if *w > 200.0 && *h > 120.0 {
+            if *w > 200.0 && *h > 60.0 {
                 return Some((*x, *y, x + w, y + h));
             }
         }
@@ -384,8 +384,8 @@ fn place(n: &Node, sc: &Scene, y: f32, out: &mut Placed) -> f32 {
             let (w, h) = (b.2 - b.0, b.3 - b.1);
             let cap = if w < 300.0 { 1.0 } else { 1.5 };
             let sx = (avail / w).min(cap);
-            // wide, flat charts get extra height so they read on a tall screen
-            let sy = if w / h > 1.8 { sx * (w / h / 1.2).min(1.9) } else { sx };
+            // uniform scale: a flat strip stays flat, so circles stay round and charts keep their proportions
+            let sy = sx;
             leaf(items, *b, sc, (PW - w * sx) / 2.0, y, sx, sy, out);
             h * sy
         }
@@ -534,8 +534,76 @@ fn fit_texts(prims: &mut Vec<Prim>) -> (f32, Vec<(f32, f32)>) {
             }
         }
     }
+    let (row_grow, row_shifts) = pack_rows(prims);
+    total += row_grow;
+    shifts.extend(row_shifts);
     let _dropped = decollide(prims);
     (total, shifts)
+}
+
+/// Labels that sit on one baseline and overlap sideways (legend rows, value rows) are packed left to
+/// right with a gap; a row that runs past the column wraps its tail onto a new line below.
+/// Returns the height added and the shifts applied, like `fit_texts`.
+fn pack_rows(prims: &mut Vec<Prim>) -> (f32, Vec<(f32, f32)>) {
+    const GAP: f32 = 8.0;
+    let mut grow = 0.0f32;
+    let mut shifts: Vec<(f32, f32)> = vec![];
+    let ty = |p: &Prim| if let Prim::T { y, .. } = p { *y } else { 0.0 };
+    let mut idx: Vec<usize> = (0..prims.len()).filter(|&i| glyph_box(&prims[i]).is_some()).collect();
+    idx.sort_by(|&a, &b| ty(&prims[a]).total_cmp(&ty(&prims[b])));
+    // clusters of texts whose baselines are within 4 px
+    let mut clusters: Vec<Vec<usize>> = vec![];
+    for &i in &idx {
+        let y = ty(&prims[i]);
+        match clusters.last_mut() {
+            Some(c) if (ty(&prims[c[0]]) - y).abs() <= 4.0 => c.push(i),
+            _ => clusters.push(vec![i]),
+        }
+    }
+    for c in clusters {
+        if c.len() < 2 {
+            continue;
+        }
+        let boxes: Vec<(usize, (f32, f32, f32, f32, f32))> = c.iter().map(|&i| (i, glyph_box(&prims[i]).unwrap())).collect();
+        let clash = boxes.iter().enumerate().any(|(k, a)| boxes.iter().skip(k + 1).any(|b| a.1 .2.min(b.1 .2) - a.1 .0.max(b.1 .0) > 2.0));
+        if !clash {
+            continue;
+        }
+        // left edge and width of every run in the row, from its current anchor
+        let mut items: Vec<(usize, f32, f32, Vec<(String, String)>, f32, bool)> = vec![];
+        for &i in &c {
+            let Prim::T { x, runs, sz, hd, a, .. } = prims[i].clone() else { continue };
+            let w = text_extent(&runs, sz, hd);
+            let left = match a {
+                0 => x,
+                1 => x - w / 2.0,
+                _ => x - w,
+            };
+            items.push((i, left, w, runs, sz, hd));
+        }
+        items.sort_by(|a, b| a.1.total_cmp(&b.1));
+        let mut cur_y = ty(&prims[c[0]]);
+        let mut cursor = TEXT_LO;
+        let mut lh = 0.0f32;
+        for (i, _left, w, runs, sz, hd) in items {
+            if cursor + w > TEXT_HI && cursor > TEXT_LO {
+                // wrap: the rest of the row goes on a new line below and the board below moves down
+                let dh = (lh.max(sz) * 1.35).max(1.0);
+                shift_below(prims, cur_y, dh);
+                shifts.push((cur_y, dh));
+                grow += dh;
+                cur_y += dh;
+                cursor = TEXT_LO;
+                lh = 0.0;
+            }
+            // a run wider than the whole column is shrunk to fit it
+            let new_sz = if cursor + w > TEXT_HI { sz * ((TEXT_HI - cursor) / w) * 0.995 } else { sz };
+            prims[i] = Prim::T { x: cursor, y: cur_y, runs, sz: new_sz, w: 400, hd, a: 0, o: 1.0, l: -1 };
+            cursor += w + GAP;
+            lh = lh.max(sz);
+        }
+    }
+    (grow, shifts)
 }
 
 /// Text box of a run at its current position (see the layout audit in tests/layout.rs).

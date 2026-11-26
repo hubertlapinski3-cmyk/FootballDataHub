@@ -56,7 +56,7 @@ fn empty_boxes(board: &str, sc: &Scene, out: &mut Vec<Violation>) {
     };
     for (i, p) in sc.prims.iter().enumerate() {
         let Prim::R { x, y, w, h, .. } = p else { continue };
-        if *w <= 200.0 || *h <= 120.0 {
+        if *w <= 200.0 || *h <= 60.0 {
             continue;
         }
         let inside = sc.prims.iter().enumerate().any(|(j, q)| {
@@ -112,9 +112,7 @@ fn sample_scenes(tag: &str) -> Vec<(String, Scene)> {
 }
 
 /// Known open item: large panels whose contents were dropped or moved by label de-collision.
-/// Kept as an ignored test so the suite stays green while the cause is worked on.
 #[test]
-#[ignore = "known: empty panels on 03, 06, 13 (labels inside them were removed by de-collision)"]
 fn no_empty_panels_on_any_board() {
     let mut v = vec![];
     for (id, sc) in sample_scenes("panels") {
