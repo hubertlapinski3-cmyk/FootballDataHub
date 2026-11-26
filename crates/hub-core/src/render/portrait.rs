@@ -126,6 +126,78 @@ fn is_footer(sc: &Scene, i: usize) -> bool {
 
 // ---------------------------------------------------------------- XY-cut
 
+thread_local! {
+    /// container unit -> every primitive that belongs to it (its panel, pitch or plot area and the marks inside)
+    static GROUPS: std::cell::RefCell<std::collections::HashMap<usize, Vec<usize>>> = std::cell::RefCell::new(Default::default());
+}
+
+/// Expands container units to their members. Other indices stand for themselves.
+fn expand(items: &[usize]) -> Vec<usize> {
+    GROUPS.with(|g| {
+        let g = g.borrow();
+        items.iter().flat_map(|i| g.get(i).cloned().unwrap_or_else(|| vec![*i])).collect()
+    })
+}
+
+/// Builds the atomic units XY-cut may move: every panel (large rectangle) with everything anchored
+/// inside it becomes one unit, so a chart's frame can never be cut away from its marks.
+fn group_units(body: &[usize], sc: &Scene) -> Vec<(usize, Box4)> {
+    let anchor_of = |p: &Prim| -> Option<(f32, f32)> {
+        match p {
+            Prim::R { x, y, .. } | Prim::C { x, y, .. } | Prim::T { x, y, .. } | Prim::I { x, y, .. } => Some((*x, *y)),
+            Prim::L { p, .. } | Prim::P { p, .. } => p.first().map(|q| (q[0], q[1])),
+        }
+    };
+    let rect = |p: &Prim| -> Option<Box4> {
+        if let Prim::R { x, y, w, h, .. } = p {
+            if *w > 200.0 && *h > 120.0 {
+                return Some((*x, *y, x + w, y + h));
+            }
+        }
+        None
+    };
+    let containers: Vec<(usize, Box4)> = body.iter().filter_map(|&i| rect(&sc.prims[i]).map(|r| (i, r))).collect();
+    let inside = |r: Box4, p: (f32, f32)| p.0 >= r.0 && p.0 <= r.2 && p.1 >= r.1 && p.1 <= r.3;
+    // parent = the smallest container that holds this primitive's anchor (never itself)
+    let mut parent: std::collections::HashMap<usize, usize> = Default::default();
+    for &j in body {
+        let Some(a) = anchor_of(&sc.prims[j]) else { continue };
+        let best = containers
+            .iter()
+            .filter(|(c, r)| *c != j && inside(*r, a) && rect(&sc.prims[j]).map(|rj| rj != *r).unwrap_or(true))
+            .min_by(|x, y| ((x.1 .2 - x.1 .0) * (x.1 .3 - x.1 .1)).partial_cmp(&((y.1 .2 - y.1 .0) * (y.1 .3 - y.1 .1))).unwrap());
+        if let Some((c, _)) = best {
+            parent.insert(j, *c);
+        }
+    }
+    fn flat(c: usize, parent: &std::collections::HashMap<usize, usize>, body: &[usize]) -> Vec<usize> {
+        let mut out = vec![c];
+        for &j in body {
+            if j != c && parent.get(&j) == Some(&c) {
+                out.extend(flat(j, parent, body));
+            }
+        }
+        out
+    }
+    let mut units = vec![];
+    let mut groups: std::collections::HashMap<usize, Vec<usize>> = Default::default();
+    for &j in body {
+        if parent.contains_key(&j) {
+            continue;
+        }
+        if rect(&sc.prims[j]).is_some() {
+            let members = flat(j, &parent, body);
+            let b = members.iter().map(|&m| bbox1(&sc.prims[m])).reduce(union).unwrap();
+            groups.insert(j, members);
+            units.push((j, b));
+        } else {
+            units.push((j, bbox1(&sc.prims[j])));
+        }
+    }
+    GROUPS.with(|g| *g.borrow_mut() = groups);
+    units
+}
+
 enum Node {
     Leaf { items: Vec<usize>, b: Box4 },
     /// children stacked top to bottom
@@ -253,6 +325,7 @@ fn nat(n: &Node) -> (f32, f32) {
 }
 
 fn leaf(items: &[usize], b: Box4, sc: &Scene, x: f32, y: f32, sx: f32, sy: f32, out: &mut Placed) {
+    let items = &expand(items)[..];
     // a soft card behind sizeable blocks that do not already carry their own panel
     let (w, h) = ((b.2 - b.0) * sx, (b.3 - b.1) * sy);
     if w > 160.0 && h > 90.0 && !has_panel(items, sc) {
@@ -461,8 +534,7 @@ fn fit_texts(prims: &mut Vec<Prim>) -> (f32, Vec<(f32, f32)>) {
             }
         }
     }
-    let dropped = decollide(prims);
-    let _ = dropped;
+    let _dropped = decollide(prims);
     (total, shifts)
 }
 
@@ -552,8 +624,14 @@ pub fn reflow(sc: &Scene) -> Option<Scene> {
         }
         let (ax, ay) = anchor(p);
         if ay < 142.0 {
-            if matches!(p, Prim::R { w, .. } if *w > 600.0 || (*w > 100.0 && ay > 130.0)) {
+            // only the real header frame (top of the board) and the team-colour rule are header chrome;
+            // any other rectangle is a panel and belongs with its contents in the body
+            let header_frame = matches!(p, Prim::R { h, .. } if *h > 100.0) && ay < 40.0;
+            let rule = matches!(p, Prim::R { h, .. } if *h <= 6.0) && ay >= 130.0;
+            if header_frame || rule {
                 head_frame.push(p);
+            } else if matches!(p, Prim::R { .. }) {
+                body.push(i);
             } else if ax < 1040.0 {
                 head_left.push(p);
             }
@@ -636,7 +714,7 @@ pub fn reflow(sc: &Scene) -> Option<Scene> {
     }
 
     // ---- body
-    let items: Vec<(usize, Box4)> = body.iter().map(|&i| (i, bbox1(&sc.prims[i]))).collect();
+    let items: Vec<(usize, Box4)> = group_units(&body, sc);
     // two side-by-side charts: keep each column whole, so rows of one chart are never interleaved with the other
     // full-width notes and banners are kept out of the column search: their width would hide the gap
     let (wide, narrow): (Vec<(usize, Box4)>, Vec<(usize, Box4)>) = items.iter().cloned().partition(|x| x.1 .2 - x.1 .0 > 700.0);

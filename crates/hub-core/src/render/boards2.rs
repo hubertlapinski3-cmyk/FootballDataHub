@@ -458,7 +458,8 @@ pub fn vaep(c: &Ctx) -> Board {
     let (th, ta) = (c.a.t(Side::Home).vaep, c.a.t(Side::Away).vaep);
     s.t(60.0, 205.0, &format!("{}  {}  →", c.name(Side::Home).to_uppercase(), signed(th, 2)), 16.0, 800, c.col(Side::Home), Anchor::Start);
     s.t(1060.0, 205.0, &format!("←  {}  {}", c.name(Side::Away).to_uppercase(), signed(ta, 2)), 16.0, 800, c.col(Side::Away), Anchor::End);
-    let p = Pitch::right(60.0, 225.0, 1000.0, 600.0);
+    // vertical pitch: attack points up the phone screen
+    let p = Pitch::up(60.0, 225.0, 600.0, 900.0, 0.0);
     p.draw(&mut s);
     let mx = ps.iter().map(|p| (p.vaep_off + p.vaep_def).abs()).fold(0.05, f64::max);
     let mut labelled = 0;

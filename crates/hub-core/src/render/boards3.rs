@@ -611,7 +611,8 @@ fn measures(p: &PlayerStats) -> Vec<Measure> {
             m("Final-third receptions", p.ft_receptions as f64, p.ft_receptions.to_string()),
             m("Progressive pass share", p.prog_pass_share, pct(p.prog_pass_share)),
             m("Take-ons won", p.take_ons.0 as f64, p.take_ons.0.to_string()),
-            m("PAdj defensive actions", p.padj_def, format!("{:.2}", p.padj_def)),
+            // a forward is measured on attacking output only
+            m("Shots", p.shots as f64, p.shots.to_string()),
         ],
     }
 }
@@ -774,7 +775,8 @@ pub fn player_card(c: &Ctx, p: &PlayerStats) -> Board {
     // ---- touch map
     s.t(24.0, y, "Where he had the ball and where he defended", 17.0, 700, PAPER, Anchor::Start);
     y += 18.0;
-    let pm = Pitch::right(20.0, y, PW - 40.0, 410.0);
+    // vertical pitch, full card width, attacking up
+    let pm = Pitch::up(20.0, y, PW - 40.0, 720.0, 0.0);
     let ev = &c.m.events;
     let mine: Vec<&Event> = ev.iter().filter(|e| e.player == Some(p.id) && e.side == sd).collect();
     let touches: Vec<(f64, f64)> = mine.iter().filter(|e| e.kind.is_on_ball() && !matches!(e.kind, Kind::Foul)).map(|e| (e.x, e.y)).collect();
@@ -801,8 +803,9 @@ pub fn player_card(c: &Ctx, p: &PlayerStats) -> Board {
         }
     }
     if p.def_height > 0.0 {
-        let (hx, _) = pm.p(p.def_height, 0.0);
-        s.line(hx, pm.y0, hx, pm.y0 + pm.h, &c.th.semantic.defending, 1.8, r#"stroke-dasharray="6 4""#);
+        // defensive height is a distance up the pitch: a horizontal line on the vertical pitch
+        let (_, hy) = pm.p(p.def_height, 0.0);
+        s.line(pm.x0, hy, pm.x0 + pm.w, hy, &c.th.semantic.defending, 1.8, r#"stroke-dasharray="6 4""#);
     }
     y = pm.y0 + pm.h + 22.0;
     // legend as wrapped pills
