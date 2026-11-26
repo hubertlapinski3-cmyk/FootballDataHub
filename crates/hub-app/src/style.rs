@@ -297,8 +297,9 @@ pub fn back_button(ui: &mut Ui, c: Color32) -> egui::Response {
 }
 
 pub fn section_title(ui: &mut Ui, t: &str, dark: bool) {
-    ui.add_space(8.0);
+    ui.add_space(24.0);
     ui.label(RichText::new(t).font(semi(15.0)).color(if dark { DARK_TEXT2 } else { TEXT2 }));
+    ui.add_space(8.0);
 }
 
 /// Screen backdrop for dark surfaces: deep navy fading through indigo, with a soft teal glow low-right.

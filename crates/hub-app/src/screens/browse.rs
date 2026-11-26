@@ -20,13 +20,13 @@ impl App {
         ScrollArea::vertical().id_salt("onb").show(ui, |ui| egui::Frame::new().inner_margin(egui::Margin::symmetric(18, 0)).show(ui, |ui| {
             ui.add_space(36.0);
             ui.vertical_centered(|ui| {
-                ui.label(RichText::new("DATA HUB").font(bold(13.0)).color(SECONDARY));
+                ui.label(RichText::new("Data Hub").font(bold(13.0)).color(SECONDARY));
                 ui.label(RichText::new("Every match, read like a broadcast").font(head(40.0)).color(WHITE));
                 ui.add_space(4.0);
                 ui.label(RichText::new("31 analysis boards and a written report from one WhoScored match").font(body(15.0)).color(DARK_TEXT2));
             });
             ui.add_space(20.0);
-            egui::Frame::new().fill(BOARD_BG).corner_radius(18).inner_margin(10).stroke(Stroke::new(1.0, ROOM_LINE)).show(ui, |ui| {
+            egui::Frame::new().fill(BOARD_BG).corner_radius(20).inner_margin(12).stroke(Stroke::new(1.0, ROOM_LINE)).show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 let w = ui.available_width();
                 let h = w * 1130.0 / 1600.0;
@@ -44,12 +44,12 @@ impl App {
                 let cap = preview.map(|i| { let s = &self.lib.entries[i].s; format!("Sample board: xG flow · {} {}–{} {} · {}", s.home, s.score[0], s.score[1], s.away, s.competition) }).unwrap_or_else(|| "Sample board: xG flow".into());
                 ui.label(RichText::new(cap).font(body(12.0)).color(DARK_TEXT2));
             });
-            ui.add_space(18.0);
+            ui.add_space(16.0);
             ui.label(RichText::new("How the win model works").font(head(22.0)).color(WHITE));
             ui.label(RichText::new("Every shot is replayed at its expected-goals value thousands of times to price the result, and the live win curve is a transparent heuristic built only from the score, the time left and each side's xG so far. It is not a betting model, and every board lists the models, sources and fallbacks behind it.").font(body(14.5)).color(DARK_TEXT2));
-            ui.add_space(22.0);
+            ui.add_space(24.0);
             ui.vertical_centered_justified(|ui| {
-                if cta(ui, "Get Started", true) {
+                if cta(ui, "Get started", true) {
                     self.prefs.onboarded = true;
                     self.save_prefs();
                     self.open_on_done = true;
@@ -79,7 +79,7 @@ impl App {
                 });
                 ui.horizontal_wrapped(|ui| {
                     let ok = !self.input.trim().is_empty() && !running;
-                    if cta(ui, "Build Match", ok) {
+                    if cta(ui, "Build match", ok) {
                         let s = self.input.trim().to_string();
                         let is_file = std::path::Path::new(&s).exists();
                         if !is_file && !self.prefs.online() {
@@ -108,7 +108,7 @@ impl App {
                 } else {
                     ui.label(RichText::new(format!("Saved WhoScored pages (.html / .json / .gz) placed in {} appear here.", self.import_dir().display())).font(body(12.0)).color(sub()));
                 }
-                ui.add_space(6.0);
+                ui.add_space(8.0);
                 self.build_status(ui, lt());
                 if let Some((inp, msg)) = self.failed.clone() {
                     let lower = msg.to_lowercase();
@@ -220,7 +220,7 @@ impl App {
                 ui.add_space(40.0);
                 ui.vertical_centered(|ui| {
                     ui.label(RichText::new("No matches yet").font(head(26.0)).color(fg()));
-                    ui.label(RichText::new("Build a match from Home or open the sample to see its boards here.").font(body(14.0)).color(sub()));
+                    ui.label(RichText::new("Build a match from Home or open the sample to see its boards here").font(body(14.0)).color(sub()));
                     ui.add_space(12.0);
                     if cta(ui, "Go to Home", true) {
                         self.go_home();
@@ -254,7 +254,7 @@ impl App {
                             }
                         });
                     });
-                    ui.add_space(6.0);
+                    ui.add_space(8.0);
                 }
             });
             if let Some(i) = open {
@@ -300,7 +300,7 @@ impl App {
                         }
                     });
                 }
-                ui.add_space(6.0);
+                ui.add_space(8.0);
                 if let Some(i) = tab_row(ui, &["Boards", "Report", "Players", "Compare"], 0) {
                     match i {
                         1 => self.push(Screen::Report(m)),
@@ -314,7 +314,7 @@ impl App {
                         _ => {}
                     }
                 }
-                ui.add_space(6.0);
+                ui.add_space(8.0);
                 if !e.s.fallbacks.is_empty() {
                     // one plain line here; the full fallback list lives in the Info sheet
                     let n = e.s.fallbacks.len();
@@ -394,9 +394,9 @@ impl App {
                 ui.set_max_width(ui.available_width()); // wrap to the viewport, never widen it
                 ui.label(RichText::new(&rep.headline).font(head(34.0)).color(fg()));
                 rich_paragraph(ui, &rep.standfirst, &e.s.home, &e.s.away, hc, ac, 16.0);
-                ui.add_space(6.0);
+                ui.add_space(8.0);
                 for sec in &rep.sections {
-                    ui.add_space(10.0);
+                    ui.add_space(8.0);
                     ui.label(RichText::new(&sec.title).font(head(24.0)).color(fg()));
                     let (r, _) = ui.allocate_exact_size(Vec2::new(48.0, 3.0), Sense::hover());
                     ui.painter().rect_filled(r, 1.0, PRIMARY);
@@ -415,7 +415,7 @@ impl App {
                         });
                     }
                 }
-                ui.add_space(30.0);
+                ui.add_space(32.0);
             });
         });
     }
@@ -431,8 +431,8 @@ impl App {
                 ui.set_max_width(ui.available_width()); // wrap to the viewport, never widen it
                 for side in 0..2 {
                     let col = self.team_col(m, side);
-                    ui.add_space(6.0);
-                    ui.label(RichText::new(if side == 0 { e.s.home.to_uppercase() } else { e.s.away.to_uppercase() }).font(head(22.0)).color(col));
+                    ui.add_space(8.0);
+                    ui.label(RichText::new(if side == 0 { e.s.home.clone() } else { e.s.away.clone() }).font(head(22.0)).color(col));
                     let mut ps: Vec<&library::PlayerMeta> = e.s.players.iter().filter(|p| p.side == side).collect();
                     ps.sort_by(|a, b| b.minutes.partial_cmp(&a.minutes).unwrap());
                     for (k, p) in ps.into_iter().enumerate() {
@@ -503,7 +503,7 @@ impl App {
                 if self.draw_board(ui, m, &p.board, w, false, true).clicked() {
                     self.push(Screen::Viewer { m, board: p.board.clone() });
                 }
-                ui.label(RichText::new("Tap the card to open it full screen, zoom and inspect each wedge.").font(body(12.0)).color(DARK_TEXT2));
+                ui.label(RichText::new("Tap the card to open it full screen, zoom and inspect each wedge").font(body(12.0)).color(DARK_TEXT2));
                 ui.add_space(20.0);
             });
         });
@@ -520,7 +520,7 @@ impl App {
                 ui.add_space(40.0);
                 ui.vertical_centered(|ui| {
                     ui.label(RichText::new("Nothing to compare yet").font(head(26.0)).color(WHITE));
-                    ui.label(RichText::new("Compare needs one built match: it lines up its two teams side by side.").font(body(14.0)).color(DARK_TEXT2));
+                    ui.label(RichText::new("Compare needs one built match: it lines up its two teams side by side").font(body(14.0)).color(DARK_TEXT2));
                     ui.add_space(12.0);
                     if cta(ui, "Go to Home", true) {
                         self.go_home();
@@ -569,8 +569,8 @@ impl App {
                     }
                 });
                 if !self.compare.ran {
-                    ui.add_space(6.0);
-                    egui::Frame::new().fill(ROOM_CARD_HI).corner_radius(24).inner_margin(6).show(ui, |ui| {
+                    ui.add_space(8.0);
+                    egui::Frame::new().fill(ROOM_CARD_HI).corner_radius(24).inner_margin(8).show(ui, |ui| {
                         ui.spacing_mut().slider_width = ui.available_width() - 20.0;
                         ui.visuals_mut().selection.bg_fill = SECONDARY_VARIANT;
                         ui.add(egui::Slider::new(&mut self.compare.swipe, 0.0..=1.0).show_value(false).trailing_fill(true));
@@ -585,11 +585,14 @@ impl App {
                 let (el, er) = (self.lib.entries[l.0].clone(), self.lib.entries[r.0].clone());
                 let (tl, tr) = (&el.s.teams[l.1], &er.s.teams[r.1]);
                 let (cl, cr) = (self.team_col(l.0, l.1), self.team_col(r.0, r.1));
-                ui.add_space(6.0);
+                ui.add_space(8.0);
                 ui.set_max_width(ui.available_width() - 26.0);
-                ui.columns(2, |c| {
-                    c[0].label(RichText::new(tl.name.to_uppercase()).font(head(22.0)).color(cl));
-                    c[1].with_layout(Layout::right_to_left(Align::Min), |ui| ui.label(RichText::new(tr.name.to_uppercase()).font(head(22.0)).color(cr)));
+                let hw = ui.available_width();
+                ui.allocate_ui_with_layout(Vec2::new(hw, 0.0), Layout::top_down(Align::Min), |ui| {
+                    ui.columns(2, |c| {
+                        c[0].add(egui::Label::new(RichText::new(tl.name.clone()).font(head(22.0)).color(cl)).truncate());
+                        c[1].with_layout(Layout::right_to_left(Align::Min), |ui| ui.add(egui::Label::new(RichText::new(tr.name.clone()).font(head(22.0)).color(cr)).truncate()));
+                    });
                 });
                 let ratio = |x: (usize, usize)| format!("{}/{}", x.0, x.1);
                 let mut rows: Vec<(&str, String, String, f64, f64, Option<&str>)> = vec![];
@@ -646,7 +649,11 @@ impl App {
                     // win/loss decoded by arrow as well as colour
                     if (fa - fb).abs() > 1e-9 {
                         let (x, txt) = if fa > fb { (mid - 10.0 - wl - 8.0, "▲") } else { (mid + 10.0 + wr + 8.0, "▲") };
-                        p.text(egui::pos2(x, rect.top() + 26.0), egui::Align2::CENTER_CENTER, txt, body(9.0), SECONDARY);
+                        // the arrow gives way to the figures when large text leaves no room for it
+                        let (lw, rw) = (p.layout_no_wrap(a.clone(), head(19.0), WHITE).size().x, p.layout_no_wrap(b.clone(), head(19.0), WHITE).size().x);
+                        if x - 6.0 > rect.left() + lw + 4.0 && x + 6.0 < rect.right() - rw - 4.0 {
+                            p.text(egui::pos2(x, rect.top() + 26.0), egui::Align2::CENTER_CENTER, txt, body(9.0), SECONDARY);
+                        }
                     }
                     p.line_segment([rect.left_bottom(), rect.right_bottom()], Stroke::new(1.0, DARK_LINE));
                     if let Some(d) = def {
@@ -655,10 +662,10 @@ impl App {
                 }
                 if self.compare.groups[2] {
                     let band = |v: Option<f64>| match v {
-                        Some(v) if v < 8.0 => "ELITE PRESS (<8)",
-                        Some(v) if v <= 12.0 => "MEDIUM BLOCK (8–12)",
-                        Some(_) => "LOW BLOCK (>12)",
-                        None => "NO DATA",
+                        Some(v) if v < 8.0 => "Elite press (<8)",
+                        Some(v) if v <= 12.0 => "Medium block (8 to 12)",
+                        Some(_) => "Low block (>12)",
+                        None => "No data",
                     };
                     ui.columns(2, |c| {
                         c[0].label(RichText::new(band(tl.ppda)).font(bold(12.0)).color(cl));
@@ -732,8 +739,8 @@ impl App {
         let hw = ui.available_width() - 26.0;
         ui.allocate_ui_with_layout(Vec2::new(hw, 0.0), Layout::top_down(Align::Min), |ui| {
             ui.columns(2, |c| {
-                c[0].add(egui::Label::new(RichText::new(l.1.short.to_uppercase()).font(head(20.0)).color(cl)).truncate());
-                c[1].with_layout(Layout::right_to_left(Align::Min), |ui| ui.add(egui::Label::new(RichText::new(r.1.short.to_uppercase()).font(head(20.0)).color(cr)).truncate()));
+                c[0].add(egui::Label::new(RichText::new(l.1.short.clone()).font(head(20.0)).color(cl)).truncate());
+                c[1].with_layout(Layout::right_to_left(Align::Min), |ui| ui.add(egui::Label::new(RichText::new(r.1.short.clone()).font(head(20.0)).color(cr)).truncate()));
             });
         });
         section_title(ui, "Profile per 90 minutes", true);
@@ -906,7 +913,7 @@ impl App {
                         let _ = std::fs::remove_dir_all(&cache);
                         self.toast(ui.ctx(), "Source cache cleared");
                     }
-                    if ui.add(egui::Button::new(RichText::new("Delete all matches").color(WHITE)).fill(ERROR).corner_radius(22).min_size(Vec2::new(0.0, 48.0))).clicked() {
+                    if ui.add(egui::Button::new(RichText::new("Delete all matches").color(WHITE)).fill(ERROR).corner_radius(24).min_size(Vec2::new(0.0, 48.0))).clicked() {
                         let _ = std::fs::remove_dir_all(&mdir);
                         self.lib.reload();
                         self.raster.clear();
@@ -938,7 +945,7 @@ impl App {
                     ui.label(RichText::new(format!("{} v {} · metric {} · built {}", e.s.home, e.s.away, e.s.metric_version, &e.s.built_at[..16.min(e.s.built_at.len())])).font(body(12.0)).color(sub()));
                 }
                 ui.label(RichText::new(format!("Import folder: {}", self.import_dir().display())).font(body(12.0)).color(sub()));
-                ui.add_space(30.0);
+                ui.add_space(32.0);
             });
         });
     }
@@ -1036,7 +1043,7 @@ pub fn draw_icon_col(ui: &Ui, r: egui::Rect, kind: &str, colr: Color32) {
         _ => {
             for i in 0..8 {
                 let a = i as f32 * std::f32::consts::TAU / 8.0;
-                p.line_segment([c + Vec2::angled(a) * 8.0, c + Vec2::angled(a) * 12.5], Stroke::new(3.5, colr));
+                p.line_segment([c + Vec2::angled(a) * 8.0, c + Vec2::angled(a) * 12.5], Stroke::new(2.4, colr));
             }
             p.circle_stroke(c, 7.5, st);
             p.circle_filled(c, 2.5, colr);
@@ -1074,12 +1081,18 @@ fn dual_radar(ui: &mut Ui, a: &library::PlayerMeta, b: &library::PlayerMeta, ca:
     }
     for i in 0..8 {
         p.line_segment([c, point(r, i)], Stroke::new(1.0, DARK_LINE));
-        p.text(point(r + 26.0, i), egui::Align2::CENTER_CENTER, RADAR_AXES[i], semi(11.0), DARK_TEXT2);
     }
     for (prof, col) in [(pa, ca), (pb, cb)] {
         let poly: Vec<egui::Pos2> = (0..8).map(|i| point(r * (prof[i] / max[i]).clamp(0.0, 1.0) as f32, i)).collect();
         p.add(egui::Shape::convex_polygon(poly.clone(), Color32::from_rgba_unmultiplied(col.r(), col.g(), col.b(), 60), Stroke::NONE));
         p.add(egui::Shape::closed_line(poly, Stroke::new(2.0, col)));
+    }
+    // axis labels last, on a backing, so no spoke or polygon edge runs through them
+    for i in 0..8 {
+        let g = p.layout_no_wrap(RADAR_AXES[i].to_string(), semi(11.0), DARK_TEXT2);
+        let lr = egui::Align2::CENTER_CENTER.anchor_size(point(r + 26.0, i), g.size());
+        p.rect_filled(lr.expand(2.0), 4.0, INK);
+        p.galley(lr.min, g, DARK_TEXT2);
     }
     ui.horizontal_wrapped(|ui| {
         for (p, col) in [(a, ca), (b, cb)] {

@@ -42,6 +42,9 @@ pub struct Scene {
     /// index of the first footer primitive (how-to-read lines), 0 when there is none
     #[serde(default)]
     pub footer_start: usize,
+    /// boxes whose contents must stay together when the board is reflowed (a drawn pitch with its marks)
+    #[serde(default)]
+    pub regions: Vec<[f32; 4]>,
 }
 
 fn attr_f(extra: &str, key: &str) -> Option<f32> {
@@ -118,6 +121,10 @@ impl Svg {
             Some(l) => self.layer_idx(&l),
             None => -1,
         }
+    }
+    /// Declares a box (x, y, w, h) as one atomic unit for the phone reflow.
+    pub fn region(&mut self, x: f64, y: f64, w: f64, h: f64) {
+        self.scene.regions.push([x as f32, y as f32, w as f32, h as f32]);
     }
     pub fn legend_hit(&mut self, layer: &str, x: f64, y: f64, w: f64, h: f64) {
         let l = self.layer_idx(layer);

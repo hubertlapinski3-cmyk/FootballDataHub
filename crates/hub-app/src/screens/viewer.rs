@@ -293,13 +293,13 @@ impl App {
         });
         ScrollArea::vertical().id_salt("manifest").show(&mut su, |ui| {
             let row = |ui: &mut Ui, k: &str, val: String| {
-                ui.label(RichText::new(k.to_uppercase()).font(bold(12.0)).color(DARK_TEXT2));
+                ui.label(RichText::new(sentence(k)).font(bold(12.0)).color(DARK_TEXT2));
                 ui.label(RichText::new(val).font(body(13.0)).color(WHITE));
             };
             if !how.is_empty() {
-                ui.label(RichText::new("HOW TO READ").font(bold(12.0)).color(DARK_TEXT2));
+                ui.label(RichText::new("How to read").font(bold(12.0)).color(DARK_TEXT2));
                 ui.label(RichText::new(how).font(body(14.0)).color(WHITE));
-                ui.label(RichText::new("Pinch to zoom, tap a mark for details, tap a legend entry to hide it.").font(body(12.0)).color(SECONDARY));
+                ui.label(RichText::new("Pinch to zoom, tap a mark for details, tap a legend entry to hide it").font(body(12.0)).color(SECONDARY));
                 ui.add_space(8.0);
             }
             row(ui, "board", v["board"].as_str().unwrap_or(board).to_string());
@@ -311,15 +311,15 @@ impl App {
             }
             row(ui, "sources used", v["sources_used"].as_array().map(|a| a.iter().filter_map(|x| x.as_str()).collect::<Vec<_>>().join(", ")).unwrap_or_default());
             row(ui, "built at", v["built_at"].as_str().unwrap_or("").to_string());
-            ui.label(RichText::new("FALLBACKS").font(bold(12.0)).color(DARK_TEXT2));
+            ui.label(RichText::new("Fallbacks").font(bold(12.0)).color(DARK_TEXT2));
             for f in v["fallbacks"].as_array().cloned().unwrap_or_default() {
                 ui.label(RichText::new(format!("• {}", f.as_str().unwrap_or(""))).font(body(12.0)).color(WHITE));
             }
-            ui.label(RichText::new("THEME DECISIONS").font(bold(12.0)).color(DARK_TEXT2));
+            ui.label(RichText::new("Theme decisions").font(bold(12.0)).color(DARK_TEXT2));
             for f in v["theme"]["decisions"].as_array().cloned().unwrap_or_default() {
                 ui.label(RichText::new(format!("• {}", f.as_str().unwrap_or(""))).font(body(12.0)).color(WHITE));
             }
-            ui.label(RichText::new("CONSISTENCY GATES").font(bold(12.0)).color(DARK_TEXT2));
+            ui.label(RichText::new("Consistency gates").font(bold(12.0)).color(DARK_TEXT2));
             for c in v["checks"].as_array().cloned().unwrap_or_default() {
                 let ok = c["ok"].as_bool().unwrap_or(false);
                 ui.label(RichText::new(format!("{} {}: {}", if ok { "✓" } else { "✗" }, c["name"].as_str().unwrap_or(""), c["detail"].as_str().unwrap_or(""))).font(body(12.0)).color(if ok { SECONDARY } else { Color32::from_rgb(0xff, 0x6b, 0x81) }));
@@ -408,4 +408,11 @@ impl App {
             self.viewer.show_export = false;
         }
     }
+}
+
+/// "metric_version" -> "Metric version"
+fn sentence(k: &str) -> String {
+    let t = k.replace('_', " ");
+    let mut c = t.chars();
+    c.next().map(|f| f.to_uppercase().collect::<String>() + c.as_str()).unwrap_or_default()
 }

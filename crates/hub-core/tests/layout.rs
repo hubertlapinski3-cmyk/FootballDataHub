@@ -55,8 +55,8 @@ fn empty_boxes(board: &str, sc: &Scene, out: &mut Vec<Violation>) {
         }
     };
     for (i, p) in sc.prims.iter().enumerate() {
-        let Prim::R { x, y, w, h, .. } = p else { continue };
-        if *w <= 200.0 || *h <= 60.0 {
+        let Prim::R { x, y, w, h, o, .. } = p else { continue };
+        if *w <= 200.0 || *h <= 60.0 || *o < 0.5 {
             continue;
         }
         let inside = sc.prims.iter().enumerate().any(|(j, q)| {
@@ -114,7 +114,9 @@ fn shape_box(p: &Prim) -> Option<(f32, f32, f32, f32)> {
 /// clear gap before its own label and must not sit on any other label.
 fn legend_keys(board: &str, sc: &Scene, out: &mut Vec<Violation>) {
     let texts: Vec<(usize, (f32, f32, f32, f32, f32, String))> = sc.prims.iter().enumerate().filter_map(|(i, p)| text_box(p).map(|b| (i, b))).collect();
-    for (ti, (pi, (x0, y0, _, y1, _, txt))) in texts.iter().enumerate() {
+    // (label index, key box) for every label with a small shape just left of it
+    let mut keyed: Vec<(usize, (f32, f32, f32, f32), f32)> = vec![];
+    for (ti, (pi, (x0, y0, _, y1, _, _))) in texts.iter().enumerate() {
         // numbers centred on dots are not legend labels
         if matches!(sc.prims[*pi], Prim::T { a, .. } if a != 0) {
             continue;
@@ -122,17 +124,28 @@ fn legend_keys(board: &str, sc: &Scene, out: &mut Vec<Violation>) {
         let base = *y1 - (*y1 - *y0) * 0.3 / 1.3;
         for q in &sc.prims {
             let Some((bx0, by0, bx1, by1)) = shape_box(q) else { continue };
-            let (cy, bw, bh) = ((by0 + by1) / 2.0, bx1 - bx0, by1 - by0);
-            if bw > 26.0 || bh > if matches!(q, Prim::R { .. }) { 14.0 } else { 19.0 } || bx1 > *x0 + 8.0 || bx0 < *x0 - 40.0 || cy < base - 18.0 || cy > base + 6.0 {
+            if matches!(q, Prim::C { sw, f, .. } | Prim::R { sw, f, .. } | Prim::P { sw, f, .. } if *sw > 0.2 && f != "none") {
                 continue;
             }
-            if x0 - bx1 < 7.9 {
-                out.push(Violation { board: board.into(), what: format!("legend key {:.1}px from {:?}", x0 - bx1, txt) });
+            let (cy, bw, bh) = ((by0 + by1) / 2.0, bx1 - bx0, by1 - by0);
+            if bw > 30.0 || bh > if matches!(q, Prim::R { .. }) { 18.0 } else { 24.0 } || bx1 > *x0 + 8.0 || bx0 < *x0 - 40.0 || cy < base - 18.0 || cy > base + 6.0 {
+                continue;
             }
-            for (tj, (_, (a0, a1, a2, a3, _, other))) in texts.iter().enumerate() {
-                if tj != ti && bx1.min(*a2) - bx0.max(*a0) > 1.0 && by1.min(*a3) - by0.max(*a1) > 1.0 {
-                    out.push(Violation { board: board.into(), what: format!("legend key of {:?} sits on {:?}", txt, other) });
-                }
+            keyed.push((ti, (bx0, by0, bx1, by1), base));
+        }
+    }
+    // a legend is a row of two or more keyed labels; a single dot beside a name is a data label
+    for &(ti, (bx0, by0, bx1, by1), base) in &keyed {
+        if keyed.iter().filter(|k| k.0 != ti && (k.2 - base).abs() <= 4.0).count() < 1 {
+            continue;
+        }
+        let (x0, txt) = (texts[ti].1 .0, &texts[ti].1 .5);
+        if x0 - bx1 < 7.9 {
+            out.push(Violation { board: board.into(), what: format!("legend key {:.1}px from {:?}", x0 - bx1, txt) });
+        }
+        for (tj, (_, (a0, a1, a2, a3, _, other))) in texts.iter().enumerate() {
+            if tj != ti && bx1.min(*a2) - bx0.max(*a0) > 1.0 && by1.min(*a3) - by0.max(*a1) > 1.0 {
+                out.push(Violation { board: board.into(), what: format!("legend key of {:?} sits on {:?}", txt, other) });
             }
         }
     }
@@ -192,3 +205,4 @@ fn every_board_is_clear_on_the_phone_column() {
         panic!("{} layout violations on {} boards:\n{report}", violations.len(), by_board.len());
     }
 }
+

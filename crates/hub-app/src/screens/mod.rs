@@ -235,7 +235,7 @@ impl App {
         let entry = self.lib.entries[m].clone();
         let s = &entry.s;
         let (hc, ac) = (self.team_col(m, 0), self.team_col(m, 1));
-        ui.add_space(6.0);
+        ui.add_space(8.0);
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 8.0;
             let w = ui.available_width();

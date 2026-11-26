@@ -62,6 +62,8 @@ impl Pitch {
         self.draw_with(s, theme::PITCH_LINE, 1.6);
     }
     pub fn draw_with(&self, s: &mut Svg, col: &str, sw: f64) {
+        // the pitch, its zones, marks and the label above it move and scale as one piece on a phone
+        s.region(self.x0 - 8.0, self.y0 - 26.0, self.w + 16.0, self.h + 34.0);
         let l = self.lmin;
         self.seg(s, &[(l, 0.0), (105.0, 0.0), (105.0, 68.0), (l, 68.0), (l, 0.0)], col, sw);
         if l <= 52.5 {

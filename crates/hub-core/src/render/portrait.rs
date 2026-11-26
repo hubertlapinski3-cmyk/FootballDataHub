@@ -149,8 +149,9 @@ fn group_units(body: &[usize], sc: &Scene) -> Vec<(usize, Box4)> {
         }
     };
     let rect = |p: &Prim| -> Option<Box4> {
-        if let Prim::R { x, y, w, h, .. } = p {
-            if *w > 200.0 && *h > 60.0 {
+        // translucent rectangles (zone shading on a pitch) are marks, not panels
+        if let Prim::R { x, y, w, h, o, .. } = p {
+            if *w > 200.0 && *h > 60.0 && *o >= 0.5 {
                 return Some((*x, *y, x + w, y + h));
             }
         }
@@ -170,6 +171,82 @@ fn group_units(body: &[usize], sc: &Scene) -> Vec<(usize, Box4)> {
             parent.insert(j, *c);
         }
     }
+    // Chart plot frames: three or more long, straight axis / grid lines that touch each other make one
+    // frame. Its tick labels and marks (which sit outside any panel) join it, so axes stay with their data.
+    let mut virtual_roots: std::collections::HashSet<usize> = Default::default();
+    {
+        let lines: Vec<(usize, Box4)> = body
+            .iter()
+            .filter_map(|&i| match &sc.prims[i] {
+                Prim::L { p, .. } if p.len() == 2 => {
+                    let b = bbox1(&sc.prims[i]);
+                    let (w, h) = (b.2 - b.0, b.3 - b.1);
+                    ((h < 0.6 && w > 150.0) || (w < 0.6 && h > 150.0)).then_some((i, b))
+                }
+                _ => None,
+            })
+            .collect();
+        let mut cl: Vec<Vec<usize>> = vec![];
+        let touch = |a: Box4, b: Box4| a.0 - 30.0 <= b.2 && b.0 - 30.0 <= a.2 && a.1 - 130.0 <= b.3 && b.1 - 130.0 <= a.3;
+        for (k, (_, b)) in lines.iter().enumerate() {
+            let hit: Vec<usize> = (0..cl.len()).filter(|&c| cl[c].iter().any(|&m| touch(lines[m].1, *b))).collect();
+            match hit.len() {
+                0 => cl.push(vec![k]),
+                _ => {
+                    let first = hit[0];
+                    cl[first].push(k);
+                    for &h in hit[1..].iter().rev() {
+                        let moved = cl.remove(h);
+                        cl[first].extend(moved);
+                    }
+                }
+            }
+        }
+        for c in cl.into_iter().filter(|c| c.len() >= 3) {
+            let u = c.iter().map(|&k| lines[k].1).reduce(union).unwrap();
+            let region = (u.0 - 70.0, u.1 - 36.0, u.2 + 16.0, u.3 + 66.0);
+            // the panel holding the lines (if any) is the frame's root; otherwise the first line is
+            let root = c.iter().find_map(|&k| parent.get(&lines[k].0).copied());
+            let root = match root {
+                Some(mut r) => {
+                    while let Some(&pr) = parent.get(&r) {
+                        r = pr;
+                    }
+                    r
+                }
+                None => {
+                    let r = lines[c[0]].0;
+                    virtual_roots.insert(r);
+                    r
+                }
+            };
+            for &j in body {
+                if j == root || parent.contains_key(&j) || rect(&sc.prims[j]).is_some() || virtual_roots.contains(&j) {
+                    continue;
+                }
+                if anchor_of(&sc.prims[j]).map(|a| inside(region, a)).unwrap_or(false) {
+                    parent.insert(j, root);
+                }
+            }
+        }
+    }
+    // Declared regions (a drawn pitch): everything anchored inside that is not already in a panel
+    // joins the first such primitive, so zone shading, markings and marks are never reflowed apart.
+    for r in &sc.regions {
+        let region = (r[0], r[1], r[0] + r[2], r[1] + r[3]);
+        let members: Vec<usize> = body
+            .iter()
+            .copied()
+            .filter(|&j| rect(&sc.prims[j]).is_none() && !virtual_roots.contains(&j) && !parent.contains_key(&j) && anchor_of(&sc.prims[j]).map(|a| inside(region, a)).unwrap_or(false))
+            .collect();
+        if members.len() >= 2 {
+            let root = members[0];
+            virtual_roots.insert(root);
+            for &j in &members[1..] {
+                parent.insert(j, root);
+            }
+        }
+    }
     fn flat(c: usize, parent: &std::collections::HashMap<usize, usize>, body: &[usize]) -> Vec<usize> {
         let mut out = vec![c];
         for &j in body {
@@ -185,7 +262,7 @@ fn group_units(body: &[usize], sc: &Scene) -> Vec<(usize, Box4)> {
         if parent.contains_key(&j) {
             continue;
         }
-        if rect(&sc.prims[j]).is_some() {
+        if rect(&sc.prims[j]).is_some() || virtual_roots.contains(&j) {
             let members = flat(j, &parent, body);
             let b = members.iter().map(|&m| bbox1(&sc.prims[m])).reduce(union).unwrap();
             groups.insert(j, members);
@@ -560,12 +637,14 @@ const KEY_GAP: f32 = 8.0;
 fn key_markers(prims: &[Prim], left: f32, y: f32, skip: &[usize]) -> Vec<usize> {
     let mut out = vec![];
     for (j, q) in prims.iter().enumerate() {
-        if matches!(q, Prim::T { .. } | Prim::I { .. }) || skip.contains(&j) {
+        // a data mark carries an outline; a legend key is a plain fill (or a stroke-only line)
+        let outlined = matches!(q, Prim::C { sw, f, .. } | Prim::R { sw, f, .. } | Prim::P { sw, f, .. } if *sw > 0.2 && f != "none");
+        if matches!(q, Prim::T { .. } | Prim::I { .. }) || outlined || skip.contains(&j) {
             continue;
         }
         let (bx0, by0, bx1, by1) = bbox1(q);
         let (cy, bw, bh) = ((by0 + by1) / 2.0, bx1 - bx0, by1 - by0);
-        if bw <= 26.0 && bh <= if matches!(q, Prim::R { .. }) { 14.0 } else { 19.0 } && bx1 <= left + KEY_GAP && bx0 >= left - 40.0 && cy >= y - 18.0 && cy <= y + 6.0 {
+        if bw <= 30.0 && bh <= if matches!(q, Prim::R { .. }) { 18.0 } else { 24.0 } && bx1 <= left + KEY_GAP && bx0 >= left - 40.0 && cy >= y - 18.0 && cy <= y + 6.0 {
             out.push(j);
         }
     }
@@ -575,11 +654,20 @@ fn key_markers(prims: &[Prim], left: f32, y: f32, skip: &[usize]) -> Vec<usize> 
 /// Opens KEY_GAP between a label and its key: the label moves right, or the key moves left when the
 /// label already reaches the edge of the column.
 fn space_keys(prims: &mut [Prim]) {
+    // only legend rows (two or more keyed labels on one line) are touched; a lone dot beside a name is a data label
+    let mut cand: Vec<(usize, f32)> = vec![];
     for i in 0..prims.len() {
-        let Prim::T { x, y, a, runs, sz, hd, .. } = &prims[i] else { continue };
-        if *a != 0 || runs.is_empty() {
+        let Prim::T { x, y, a, runs, .. } = &prims[i] else { continue };
+        if *a == 0 && !runs.is_empty() && !key_markers(prims, *x, *y, &[]).is_empty() {
+            cand.push((i, *y));
+        }
+    }
+    for k in 0..cand.len() {
+        let (i, y0) = cand[k];
+        if cand.iter().filter(|c| c.0 != i && (c.1 - y0).abs() <= 4.0).count() < 1 {
             continue;
         }
+        let Prim::T { x, y, runs, sz, hd, .. } = &prims[i] else { continue };
         let (left, y, w) = (*x, *y, text_extent(runs, *sz, *hd));
         let keys = key_markers(prims, left, y, &[]);
         let right = keys.iter().map(|&j| bbox1(&prims[j]).2).fold(f32::MIN, f32::max);
@@ -929,5 +1017,5 @@ pub fn reflow(sc: &Scene) -> Option<Scene> {
             legend.push(LegendHit { layer: h.layer, x: (h.x - ox) * sx + tx, y, w: h.w * sx, h: h.h * sy });
         }
     }
-    Some(Scene { w: PW, h: head_h + 30.0 + body_h + 36.0 + grow, prims, tips: sc.tips.clone(), layers: sc.layers.clone(), legend, footer_start: 0 })
+    Some(Scene { w: PW, h: head_h + 30.0 + body_h + 36.0 + grow, prims, tips: sc.tips.clone(), layers: sc.layers.clone(), legend, footer_start: 0, regions: vec![] })
 }

@@ -367,7 +367,9 @@ pub fn progression_scatter(c: &Ctx) -> Board {
     let xmax = xs.iter().cloned().fold(4.0, f64::max) * 1.08;
     let ymax = ys.iter().cloned().fold(0.3, f64::max) * 1.1;
     let px = |v: f64| x0 + v / xmax * w;
-    let py = |v: f64| y0 + h - v / ymax * h;
+    // a floor below zero keeps players with no xA off the axis labels
+    let ymin = -0.1 * ymax;
+    let py = |v: f64| y0 + h - (v - ymin) / (ymax - ymin) * h;
     for k in 0..=5 {
         let v = ymax * k as f64 / 5.0;
         s.line(x0, py(v), x0 + w, py(v), theme::LINE, 1.0, "");
@@ -407,7 +409,7 @@ pub fn progression_scatter(c: &Ctx) -> Board {
         }
         // a label that still sits on another one is left off: the point keeps its tap tooltip with the name
         let clash = placed.iter().any(|(ax, ay)| (ax - x).abs() < lw * 1.1 && (ay - ly).abs() < 17.0);
-        if !clash {
+        if !clash && ly < y0 + h - 4.0 {
             placed.push((x, ly));
             s.t(x, ly, &p.short, 12.0, 600, theme::TEXT, Anchor::Middle);
         }
