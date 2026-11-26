@@ -147,7 +147,7 @@ pub fn legend_item(s: &mut Svg, x: f64, y: f64, kind: &str, col: &str, label: &s
     // a legend entry whose key matches a layer becomes a tap-to-toggle control in the app
     let key = label.split(" (").next().unwrap_or(label).to_string();
     if s.scene.layers.iter().any(|l| *l == key) {
-        let w = 22.0 + text_w(label, 12.5, false);
+        let w = 26.0 + text_w(label, 12.5, false);
         s.legend_hit(&key, x - 4.0, y - 18.0, w + 8.0, 26.0);
     }
     let saved = s.layer.take();
@@ -163,9 +163,9 @@ pub fn legend_item(s: &mut Svg, x: f64, y: f64, kind: &str, col: &str, label: &s
         "dash" => s.line(x, y - 5.0, x + 18.0, y - 5.0, col, 2.0, r#"stroke-dasharray="4 3""#),
         _ => {}
     }
-    s.t(x + 22.0, y, label, 12.5, 500, theme::TEXT, Anchor::Start);
+    s.t(x + 26.0, y, label, 12.5, 500, theme::TEXT, Anchor::Start);
     s.layer = saved;
-    x + 22.0 + text_w(label, 12.5, false) + 24.0
+    x + 26.0 + text_w(label, 12.5, false) + 24.0
 }
 
 /// Split `text` into (run, colour) pairs, colouring every occurrence of the given names.

@@ -75,6 +75,7 @@ fn empty_boxes(board: &str, sc: &Scene, out: &mut Vec<Violation>) {
 }
 
 fn audit(board: &str, sc: &Scene, out: &mut Vec<Violation>) {
+    legend_keys(board, sc, out);
     let texts: Vec<(usize, (f32, f32, f32, f32, f32, String))> = sc.prims.iter().enumerate().filter_map(|(i, p)| text_box(p).map(|b| (i, b))).collect();
     for (_, (x0, _, x1, _, sz, txt)) in &texts {
         if *x0 < 8.0 || *x1 > 632.0 {
@@ -93,6 +94,45 @@ fn audit(board: &str, sc: &Scene, out: &mut Vec<Violation>) {
             let oy = a.3.min(b.3) - a.1.max(b.1);
             if ox > 2.0 && oy > 2.0 {
                 out.push(Violation { board: board.into(), what: format!("overlap {:?} / {:?} ({:.0}x{:.0})", a.5, b.5, ox, oy) });
+            }
+        }
+    }
+}
+
+fn shape_box(p: &Prim) -> Option<(f32, f32, f32, f32)> {
+    match p {
+        Prim::R { x, y, w, h, .. } => Some((*x, *y, x + w, y + h)),
+        Prim::C { x, y, r, .. } => Some((x - r, y - r, x + r, y + r)),
+        Prim::L { p, .. } | Prim::P { p, .. } if !p.is_empty() => {
+            Some(p.iter().fold((f32::MAX, f32::MAX, f32::MIN, f32::MIN), |b, q| (b.0.min(q[0]), b.1.min(q[1]), b.2.max(q[0]), b.3.max(q[1]))))
+        }
+        _ => None,
+    }
+}
+
+/// Legend keys: a small shape just left of a label on its line is that label's key. It must keep a
+/// clear gap before its own label and must not sit on any other label.
+fn legend_keys(board: &str, sc: &Scene, out: &mut Vec<Violation>) {
+    let texts: Vec<(usize, (f32, f32, f32, f32, f32, String))> = sc.prims.iter().enumerate().filter_map(|(i, p)| text_box(p).map(|b| (i, b))).collect();
+    for (ti, (pi, (x0, y0, _, y1, _, txt))) in texts.iter().enumerate() {
+        // numbers centred on dots are not legend labels
+        if matches!(sc.prims[*pi], Prim::T { a, .. } if a != 0) {
+            continue;
+        }
+        let base = *y1 - (*y1 - *y0) * 0.3 / 1.3;
+        for q in &sc.prims {
+            let Some((bx0, by0, bx1, by1)) = shape_box(q) else { continue };
+            let (cy, bw, bh) = ((by0 + by1) / 2.0, bx1 - bx0, by1 - by0);
+            if bw > 26.0 || bh > if matches!(q, Prim::R { .. }) { 14.0 } else { 19.0 } || bx1 > *x0 + 8.0 || bx0 < *x0 - 40.0 || cy < base - 18.0 || cy > base + 6.0 {
+                continue;
+            }
+            if x0 - bx1 < 7.9 {
+                out.push(Violation { board: board.into(), what: format!("legend key {:.1}px from {:?}", x0 - bx1, txt) });
+            }
+            for (tj, (_, (a0, a1, a2, a3, _, other))) in texts.iter().enumerate() {
+                if tj != ti && bx1.min(*a2) - bx0.max(*a0) > 1.0 && by1.min(*a3) - by0.max(*a1) > 1.0 {
+                    out.push(Violation { board: board.into(), what: format!("legend key of {:?} sits on {:?}", txt, other) });
+                }
             }
         }
     }

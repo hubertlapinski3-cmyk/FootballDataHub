@@ -534,11 +534,63 @@ fn fit_texts(prims: &mut Vec<Prim>) -> (f32, Vec<(f32, f32)>) {
             }
         }
     }
+    space_keys(prims);
     let (row_grow, row_shifts) = pack_rows(prims);
     total += row_grow;
     shifts.extend(row_shifts);
     let _dropped = decollide(prims);
     (total, shifts)
+}
+
+/// Minimum clear space between a legend key and the start of its label (phone pixels).
+const KEY_GAP: f32 = 8.0;
+
+/// Small shapes sitting just left of a label on its line: the label's key.
+fn key_markers(prims: &[Prim], left: f32, y: f32, skip: &[usize]) -> Vec<usize> {
+    let mut out = vec![];
+    for (j, q) in prims.iter().enumerate() {
+        if matches!(q, Prim::T { .. } | Prim::I { .. }) || skip.contains(&j) {
+            continue;
+        }
+        let (bx0, by0, bx1, by1) = bbox1(q);
+        let (cy, bw, bh) = ((by0 + by1) / 2.0, bx1 - bx0, by1 - by0);
+        if bw <= 26.0 && bh <= if matches!(q, Prim::R { .. }) { 14.0 } else { 19.0 } && bx1 <= left + KEY_GAP && bx0 >= left - 40.0 && cy >= y - 18.0 && cy <= y + 6.0 {
+            out.push(j);
+        }
+    }
+    out
+}
+
+/// Opens KEY_GAP between a label and its key: the label moves right, or the key moves left when the
+/// label already reaches the edge of the column.
+fn space_keys(prims: &mut [Prim]) {
+    for i in 0..prims.len() {
+        let Prim::T { x, y, a, runs, sz, hd, .. } = &prims[i] else { continue };
+        if *a != 0 || runs.is_empty() {
+            continue;
+        }
+        let (left, y, w) = (*x, *y, text_extent(runs, *sz, *hd));
+        let keys = key_markers(prims, left, y, &[]);
+        let right = keys.iter().map(|&j| bbox1(&prims[j]).2).fold(f32::MIN, f32::max);
+        if right == f32::MIN || left - right >= KEY_GAP {
+            continue;
+        }
+        let need = KEY_GAP - (left - right);
+        let push = need.min((TEXT_HI - (left + w)).max(0.0));
+        if let Prim::T { x, .. } = &mut prims[i] {
+            *x += push;
+        }
+        let back = need - push;
+        if back > 0.0 {
+            for &j in &keys {
+                match &mut prims[j] {
+                    Prim::R { x, .. } | Prim::C { x, .. } => *x -= back,
+                    Prim::L { p, .. } | Prim::P { p, .. } => p.iter_mut().for_each(|q| q[0] -= back),
+                    _ => {}
+                }
+            }
+        }
+    }
 }
 
 /// Labels that sit on one baseline and overlap sideways (legend rows, value rows) are packed left to
@@ -564,31 +616,57 @@ fn pack_rows(prims: &mut Vec<Prim>) -> (f32, Vec<(f32, f32)>) {
         if c.len() < 2 {
             continue;
         }
-        let boxes: Vec<(usize, (f32, f32, f32, f32, f32))> = c.iter().map(|&i| (i, glyph_box(&prims[i]).unwrap())).collect();
+        // each label's box reaches back over its own key, so a label touching the next key is a clash too
+        let boxes: Vec<(usize, (f32, f32, f32, f32, f32))> = c
+            .iter()
+            .map(|&i| {
+                let mut b = glyph_box(&prims[i]).unwrap();
+                let Prim::T { y, .. } = &prims[i] else { unreachable!() };
+                b.0 = key_markers(prims, b.0, *y, &[]).iter().map(|&j| bbox1(&prims[j]).0).fold(b.0, f32::min);
+                (i, b)
+            })
+            .collect();
         let clash = boxes.iter().enumerate().any(|(k, a)| boxes.iter().skip(k + 1).any(|b| a.1 .2.min(b.1 .2) - a.1 .0.max(b.1 .0) > 2.0));
         if !clash {
             continue;
         }
-        // left edge and width of every run in the row, from its current anchor
-        let mut items: Vec<(usize, f32, f32, Vec<(String, String)>, f32, bool)> = vec![];
+        // left edge and width of every run in the row, from its current anchor; a legend marker just
+        // left of a label travels with it, so a key never ends up on top of the next label
+        struct Item {
+            i: usize,
+            left: f32,
+            w: f32,
+            runs: Vec<(String, String)>,
+            sz: f32,
+            hd: bool,
+            y: f32,
+            markers: Vec<usize>,
+            lead: f32,
+        }
+        let mut claimed: Vec<usize> = vec![];
+        let mut items: Vec<Item> = vec![];
         for &i in &c {
-            let Prim::T { x, runs, sz, hd, a, .. } = prims[i].clone() else { continue };
+            let Prim::T { x, y, runs, sz, hd, a, .. } = prims[i].clone() else { continue };
             let w = text_extent(&runs, sz, hd);
             let left = match a {
                 0 => x,
                 1 => x - w / 2.0,
                 _ => x - w,
             };
-            items.push((i, left, w, runs, sz, hd));
+            let markers = key_markers(prims, left, y, &claimed);
+            let x0 = markers.iter().map(|&j| bbox1(&prims[j]).0).fold(left, f32::min);
+            claimed.extend(markers.iter().copied());
+            items.push(Item { i, left, w, runs, sz, hd, y, markers, lead: left - x0 });
         }
-        items.sort_by(|a, b| a.1.total_cmp(&b.1));
+        items.sort_by(|a, b| (a.left - a.lead).total_cmp(&(b.left - b.lead)));
         let mut cur_y = ty(&prims[c[0]]);
         let mut cursor = TEXT_LO;
         let mut lh = 0.0f32;
-        for (i, _left, w, runs, sz, hd) in items {
-            if cursor + w > TEXT_HI && cursor > TEXT_LO {
+        for it in items {
+            let total = it.lead + it.w;
+            if cursor + total > TEXT_HI && cursor > TEXT_LO {
                 // wrap: the rest of the row goes on a new line below and the board below moves down
-                let dh = (lh.max(sz) * 1.35).max(1.0);
+                let dh = (lh.max(it.sz) * 1.35).max(1.0);
                 shift_below(prims, cur_y, dh);
                 shifts.push((cur_y, dh));
                 grow += dh;
@@ -597,10 +675,27 @@ fn pack_rows(prims: &mut Vec<Prim>) -> (f32, Vec<(f32, f32)>) {
                 lh = 0.0;
             }
             // a run wider than the whole column is shrunk to fit it
-            let new_sz = if cursor + w > TEXT_HI { sz * ((TEXT_HI - cursor) / w) * 0.995 } else { sz };
-            prims[i] = Prim::T { x: cursor, y: cur_y, runs, sz: new_sz, w: 400, hd, a: 0, o: 1.0, l: -1 };
-            cursor += w + GAP;
-            lh = lh.max(sz);
+            let room = TEXT_HI - cursor - it.lead;
+            let new_sz = if it.w > room { it.sz * (room / it.w).max(0.3) * 0.995 } else { it.sz };
+            let (dx, dy) = (cursor - (it.left - it.lead), cur_y - it.y);
+            for &j in &it.markers {
+                match &mut prims[j] {
+                    Prim::R { x, y, .. } | Prim::C { x, y, .. } => {
+                        *x += dx;
+                        *y += dy;
+                    }
+                    Prim::L { p, .. } | Prim::P { p, .. } => {
+                        for q in p.iter_mut() {
+                            q[0] += dx;
+                            q[1] += dy;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            prims[it.i] = Prim::T { x: cursor + it.lead, y: cur_y, runs: it.runs, sz: new_sz, w: 400, hd: it.hd, a: 0, o: 1.0, l: -1 };
+            cursor += total + GAP;
+            lh = lh.max(it.sz);
         }
     }
     (grow, shifts)
