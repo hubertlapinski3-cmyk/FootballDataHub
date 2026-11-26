@@ -103,7 +103,7 @@ fn main() -> Result<()> {
                 None => embedded_models(),
             };
             let relay = relay.map(|repo| sources::whoscored::Relay { repo, branch: relay_branch, token: std::env::var("DATAHUB_RELAY_TOKEN").ok(), wait_secs: 480 });
-            let opts = BuildOptions { cache_dir: cache, online: !offline, overrides: theme_override, creator, store_path: Some(store), logo: None, relay };
+            let opts = BuildOptions { cache_dir: cache, online: !offline, overrides: theme_override, creator, store_path: Some(store), logo: None, relay, browser: None };
             let t0 = std::time::Instant::now();
             let o = build(&input, &opts, &models, &mut |s, f| eprintln!("[{:>3.0}%] {s}", f * 100.0))?;
             write_output(&o, &out, !no_png)?;

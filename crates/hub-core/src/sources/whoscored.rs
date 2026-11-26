@@ -5,6 +5,7 @@
 //! Accepts a match id, a URL, a saved .html page or the extracted .json blob.
 
 use crate::model::*;
+use crate::scrape::{self, MatchLink};
 use anyhow::{anyhow, Context, Result};
 use serde_json::Value;
 use std::path::Path;
@@ -61,10 +62,24 @@ fn page_url(input: &str, id: &str) -> String {
     if input.starts_with("http") { input.to_string() } else { format!("https://www.whoscored.com/Matches/{id}/Live") }
 }
 
+/// A real browser engine as a fallback for pages behind a JavaScript challenge: given a URL and a
+/// progress callback it returns the rendered page HTML. The Android app supplies a `WebView`
+/// implementation; desktop has none and relies on the relay or a saved page.
+pub type PageFetcher = std::sync::Arc<dyn Fn(&str, &mut dyn FnMut(&str)) -> Result<String> + Send + Sync>;
+
+#[derive(Clone)]
+pub struct Browser(pub PageFetcher);
+
+impl std::fmt::Debug for Browser {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Browser(..)")
+    }
+}
+
 /// Load a WhoScored match from a file, the local cache, the scrape relay or the
 /// site itself; if the site bot-walls us and a relay token is set, the relay's
 /// headless-browser workflow is triggered and polled until the data lands.
-pub fn load(input: &str, cache_dir: &Path, relay: Option<&Relay>, progress: &mut dyn FnMut(&str)) -> Result<Match> {
+pub fn load(input: &str, cache_dir: &Path, relay: Option<&Relay>, browser: Option<&Browser>, progress: &mut dyn FnMut(&str)) -> Result<Match> {
     let p = Path::new(input);
     let raw = if p.exists() {
         let bytes = std::fs::read(p).with_context(|| format!("reading {input}"))?;
@@ -81,28 +96,59 @@ pub fn load(input: &str, cache_dir: &Path, relay: Option<&Relay>, progress: &mut
                 got = r.fetch(&id);
             }
             if got.is_none() {
+                crate::cancel::check()?;
+                let link = MatchLink::parse(input).unwrap_or(MatchLink { id: id.clone(), host: "www.whoscored.com".into() });
                 progress("fetching WhoScored");
-                match fetch_page(&id).and_then(|html| extract_blob(&html)) {
+                match fetch_page(&link).and_then(|html| extract_blob(&html)) {
                     Ok(b) => got = Some(b),
-                    Err(direct_err) => match relay {
-                        Some(r) if r.auth().is_some() => {
-                            progress("WhoScored blocked direct access: starting headless scraper on GitHub Actions");
-                            r.dispatch(&page_url(input, &id))?;
-                            let t0 = std::time::Instant::now();
-                            while got.is_none() {
-                                if t0.elapsed().as_secs() > r.wait_secs {
-                                    return Err(anyhow!("scraper run did not deliver match {id} within {} s; check the Actions tab of {}", r.wait_secs, r.repo));
+                    Err(direct_err) => {
+                        crate::cancel::check()?;
+                        // 1. a real browser engine on this device (Android WebView) passes JavaScript challenges
+                        let mut browser_err: Option<anyhow::Error> = None;
+                        if crate::scrape::is_blocked(&direct_err) {
+                            if let Some(b) = browser {
+                                progress("opening the page in the built-in browser");
+                                match (b.0)(&link.page_url(), progress).and_then(|html| extract_blob(&html)) {
+                                    Ok(blob) => got = Some(blob),
+                                    Err(e) => {
+                                        if e.to_string() == "Cancelled" {
+                                            return Err(e);
+                                        }
+                                        browser_err = Some(e);
+                                    }
                                 }
-                                std::thread::sleep(std::time::Duration::from_secs(15));
-                                progress(&format!("waiting for scraper run · {} s", t0.elapsed().as_secs()));
-                                got = r.fetch(&id);
                             }
                         }
-                        Some(r) => {
-                            return Err(anyhow!("{direct_err:#}. Run the scrape-whoscored workflow in {} (Actions > scrape-whoscored > Run workflow, paste the URL) or add a relay token in Settings so the app can start it.", r.repo));
+                        // 2. the GitHub relay (headless Chromium on Actions)
+                        if got.is_none() {
+                            match relay {
+                                Some(r) if r.auth().is_some() => {
+                                    progress("blocked: starting the headless scraper on GitHub Actions");
+                                    r.dispatch(&page_url(input, &id))?;
+                                    let t0 = std::time::Instant::now();
+                                    while got.is_none() {
+                                        crate::cancel::check()?;
+                                        if t0.elapsed().as_secs() > r.wait_secs {
+                                            return Err(anyhow!("scraper run did not deliver match {id} within {} s; check the Actions tab of {}", r.wait_secs, r.repo));
+                                        }
+                                        std::thread::sleep(std::time::Duration::from_secs(5));
+                                        progress(&format!("waiting for scraper run · {} s", t0.elapsed().as_secs()));
+                                        if t0.elapsed().as_secs() % 15 < 5 {
+                                            got = r.fetch(&id);
+                                        }
+                                    }
+                                }
+                                Some(r) => {
+                                    let extra = browser_err.map(|e| format!(" The built-in browser also failed: {e:#}.")).unwrap_or_default();
+                                    return Err(anyhow!("{direct_err:#}{extra} Run the scrape-whoscored workflow in {} (Actions > scrape-whoscored > Run workflow, paste the URL), add a relay token in Settings so the app can start it, or import a saved page.", r.repo));
+                                }
+                                None => {
+                                    let extra = browser_err.map(|e| format!(" The built-in browser also failed: {e:#}.")).unwrap_or_default();
+                                    return Err(anyhow!("{direct_err:#}{extra}"));
+                                }
+                            }
                         }
-                        None => return Err(direct_err),
-                    },
+                    }
                 }
             }
             let b = got.unwrap();
@@ -120,7 +166,7 @@ pub fn load(input: &str, cache_dir: &Path, relay: Option<&Relay>, progress: &mut
             v["competitionName"] = Value::String(comp);
             v["seasonName"] = Value::String(season);
         }
-        if let Some(c) = regex::Regex::new(r"matchId:\s*(\d+)").unwrap().captures(&raw) {
+        if let Some(c) = regex::Regex::new(r#""?matchId"?\s*:\s*(\d+)"#).unwrap().captures(&raw) {
             v["matchId"] = Value::from(c[1].parse::<u64>().unwrap_or(0));
         }
     }
@@ -143,67 +189,40 @@ fn breadcrumb(html: &str) -> Option<(String, String)> {
 }
 
 pub fn match_id_from(s: &str) -> Option<String> {
-    if s.chars().all(|c| c.is_ascii_digit()) && !s.is_empty() {
-        return Some(s.to_string());
+    if let Some(l) = MatchLink::parse(s) {
+        return Some(l.id);
     }
     let re = regex::Regex::new(r"(?i)matches/(\d+)").unwrap();
     re.captures(s).map(|c| c[1].to_string())
 }
 
-fn fetch_page(id: &str) -> Result<String> {
-    let url = format!("https://www.whoscored.com/Matches/{id}/Live");
-    // Politeness: one request per match, realistic headers, cached afterwards.
-    let (status, body) = crate::net::get(&url, &[("Referer", "https://www.whoscored.com/"), ("Accept", "text/html,application/xhtml+xml"), ("Accept-Language", "en-GB,en;q=0.9")], 30)
-        .with_context(|| format!("GET {url}"))?;
-    if status == 403 {
-        return Err(anyhow!("WhoScored bot wall (HTTP 403) for {url}. Open the page in a browser, save it (Ctrl+S / Share > Save page) and import the .html file instead. Wait before retrying: repeated requests prolong the block."));
+/// One request per match with browser headers; classified errors instead of a bare status.
+fn fetch_page(link: &MatchLink) -> Result<String> {
+    let url = link.page_url();
+    let referer = format!("https://{}/", link.host);
+    let r = crate::net::get_page_cancellable(&url, &[("Referer", &referer)], 30).with_context(|| format!("GET {url}"))?;
+    let body = String::from_utf8_lossy(&r.body).into_owned();
+    if let Some(e) = scrape::status_error(&link.host, r.status, r.retry_after, &body) {
+        return Err(e.into());
     }
-    if !(200..300).contains(&status) {
-        return Err(anyhow!("WhoScored returned HTTP {status} for {url}"));
-    }
-    Ok(String::from_utf8_lossy(&body).into_owned())
+    scrape::require_match_page(&body, &link.host, Some(r.status))?;
+    Ok(body)
 }
 
 /// Extract the matchCentreData JSON object from page HTML with a brace matcher
 /// (regex alone is unreliable on nested objects).
 pub fn extract_blob(html: &str) -> Result<String> {
-    // Search after the args script marker first (same approach as the
-    // Scrape-Whoscored-Event-Data SDK), then anywhere.
-    let key = "matchCentreData";
-    let base = html.find("require.config.params[\"args\"]").unwrap_or(0);
-    let start = html[base..].find(key).map(|i| i + base).or_else(|| html.find(key)).ok_or_else(|| anyhow!("matchCentreData not found in page (bot wall or not a match-centre page?)"))?;
-    let bytes = html.as_bytes();
-    let mut i = start + key.len();
-    while i < bytes.len() && bytes[i] != b'{' {
-        i += 1;
+    match scrape::classify(html) {
+        scrape::PageKind::BotWall(vendor) => return Err(scrape::ScrapeError::Blocked { host: "the site".into(), vendor, status: None }.into()),
+        _ => {}
     }
-    let begin = i;
-    let mut depth = 0i32;
-    let mut in_str = false;
-    let mut esc = false;
-    while i < bytes.len() {
-        let c = bytes[i];
-        if in_str {
-            if esc {
-                esc = false
-            } else if c == b'\\' {
-                esc = true
-            } else if c == b'"' {
-                in_str = false
-            }
-        } else if c == b'"' {
-            in_str = true
-        } else if c == b'{' {
-            depth += 1
-        } else if c == b'}' {
-            depth -= 1;
-            if depth == 0 {
-                return Ok(html[begin..=i].to_string());
-            }
+    scrape::match_centre_blob(html).map_err(|e| {
+        if html.contains("matchCentreData") {
+            e
+        } else {
+            anyhow!("matchCentreData not found in page (not a match-centre page?)")
         }
-        i += 1;
-    }
-    Err(anyhow!("unterminated matchCentreData object"))
+    })
 }
 
 fn qnames(e: &Value) -> Vec<(String, String)> {

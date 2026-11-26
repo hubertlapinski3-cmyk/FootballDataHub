@@ -9,7 +9,9 @@ chrono = "0.4.45"
 clap = { version = "4.6.10", features = ["derive"], optional = true }
 image = { version = "0.25.10", default-features = false, features = ["png"] }
 regex = "1.13.2"
-ureq = "3.5.2"
+# pure-Rust HTTP stack: rustls (ring) + webpki roots, gzip and brotli; no OpenSSL, builds for Android with the NDK clang
+ureq = { version = "3.5.2", default-features = false, features = ["rustls", "gzip", "brotli"] }
+scraper = "0.23"
 flate2 = "1"
 resvg = "0.50.0"
 serde = { version = "1.0.229", features = ["derive"] }

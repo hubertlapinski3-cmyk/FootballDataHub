@@ -227,10 +227,13 @@ impl App {
         }
         card(dark).show(ui, |ui| {
             ui.set_width(ui.available_width());
-            ui.horizontal(|ui| {
-                ui.label(RichText::new(if st.running { "● BUILDING" } else { "✓ LAST BUILD" }).font(bold(12.0)).color(if st.running { SECONDARY_VARIANT } else { sub() }));
-                ui.label(RichText::new(&st.step).font(body(12.0)));
+            ui.horizontal_wrapped(|ui| {
+                ui.label(RichText::new(if st.running { "Building" } else if st.step == "done" { "Saved match" } else { "Last build" }).font(bold(13.0)).color(if st.running { SAGE } else { sub() }));
+                ui.label(RichText::new(step_text(&st.step, &st.detail)).font(body(13.0)).color(if dark { PRINT } else { INK }));
             });
+            if st.running && ui.add(egui::Button::new(RichText::new("Cancel").font(semi(14.0)).color(if dark { PRINT } else { INK })).fill(Color32::TRANSPARENT).stroke(Stroke::new(1.0, if dark { PRINT } else { INK })).corner_radius(24).min_size(Vec2::new(96.0, 48.0))).clicked() {
+                matchhub::cancel::request();
+            }
             let cur = STEPS.iter().position(|s| *s == st.step).unwrap_or(if st.step == "done" { STEPS.len() } else { 0 });
             let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 46.0), Sense::hover());
             let p = ui.painter();
@@ -245,7 +248,10 @@ impl App {
                     p.line_segment([egui::pos2(x, rect.top() + 12.0), egui::pos2(x2, rect.top() + 12.0)], Stroke::new(3.0, if done { SECONDARY } else { DIVIDER }));
                 }
                 p.circle_filled(egui::pos2(x, rect.top() + 12.0), if active { 8.0 } else { 6.0 }, c);
-                p.text(egui::pos2(x, rect.top() + 34.0), egui::Align2::CENTER_CENTER, *name, body(12.0), if dark { DARK_TEXT2 } else { TEXT2 });
+                // captions only when they fit: at narrow widths or large text the headline names the step
+                if rect.width() / n as f32 >= 62.0 * text_scale_pct() as f32 / 100.0 {
+                    p.text(egui::pos2(x, rect.top() + 34.0), egui::Align2::CENTER_CENTER, *name, body(12.0), if dark { DARK_TEXT2 } else { TEXT2 });
+                }
             }
             if st.running {
                 ui.add(egui::ProgressBar::new(st.frac).fill(SECONDARY_VARIANT).desired_height(6.0));
@@ -285,6 +291,28 @@ impl App {
             clicked = true;
         }
         clicked
+    }
+}
+
+/// What the progress card says: fetching, parsing, ..., saved.
+fn step_text(step: &str, detail: &str) -> String {
+    let d = detail.to_lowercase();
+    match step {
+        "ingest" if d.contains("built-in browser") => "Opening the page in the built-in browser…".into(),
+        "ingest" if d.starts_with("browser:") => format!("Built-in browser · {}", detail.trim_start_matches("browser:").trim()),
+        "ingest" if d.contains("relay") => "Checking the relay for this match…".into(),
+        "ingest" if d.contains("fetching") => "Fetching page…".into(),
+        "ingest" if d.starts_with("blocked") => "Blocked: asking the GitHub scraper…".into(),
+        "ingest" if d.starts_with("waiting") => format!("Waiting for the GitHub scraper · {}", detail.rsplit('·').next().unwrap_or("").trim()),
+        "ingest" => "Parsing events…".into(),
+        "enrich" => "Adding colours, crests and ages…".into(),
+        "model" => "Fitting the models…".into(),
+        "derive" => "Computing metrics…".into(),
+        "render" => "Drawing boards…".into(),
+        "report" => "Writing the report…".into(),
+        "done" => "Open it from Latest built matches".into(),
+        "queued" => "Starting…".into(),
+        other => other.to_string(),
     }
 }
 

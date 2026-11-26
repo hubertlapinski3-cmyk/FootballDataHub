@@ -184,6 +184,8 @@ fn headline(o: &matchhub::BuildOutput) -> String {
 pub struct BuildState {
     pub running: bool,
     pub step: String,
+    /// what the step is doing right now (page fetch, browser, relay wait, ...)
+    pub detail: String,
     pub frac: f32,
     pub error: Option<String>,
     pub done: Option<String>,
@@ -223,7 +225,7 @@ pub fn ensure_sample(root: &Path) -> Result<PathBuf> {
     Ok(sb)
 }
 
-pub fn build_match(root: &Path, src: Source, online: bool, relay: Option<matchhub::sources::whoscored::Relay>, state: Shared) -> Result<String> {
+pub fn build_match(root: &Path, src: Source, online: bool, relay: Option<matchhub::sources::whoscored::Relay>, browser: Option<matchhub::sources::whoscored::Browser>, state: Shared) -> Result<String> {
     let models = matchhub::embedded_models();
     let input = match src {
         Source::WhoScored(s) => matchhub::Input::WhoScored(s),
@@ -238,17 +240,22 @@ pub fn build_match(root: &Path, src: Source, online: bool, relay: Option<matchhu
         store_path: Some(root.join("cache").join("team_match.jsonl")),
         logo: None,
         relay,
+        browser,
     };
     let st = state.clone();
     let mut progress = move |step: &str, f: f32| {
         let mut g = st.lock().unwrap();
-        g.step = step.to_string();
+        // "ingest: fetching WhoScored" -> step "ingest", detail "fetching WhoScored"
+        let (key, detail) = step.split_once(": ").unwrap_or((step, ""));
+        g.step = key.to_string();
+        g.detail = detail.to_string();
         g.frac = f;
         g.log.push(format!("{step} {:.0}%", f * 100.0));
     };
     let o = matchhub::build(&input, &opts, &models, &mut progress).context("build")?;
     let dir = root.join("matches").join(o.m.id.replace(['/', ':'], "_"));
     let _ = std::fs::remove_dir_all(&dir);
+    matchhub::cancel::check()?;
     matchhub::write_output(&o, &dir, false)?;
     let mut crest_files: [Option<String>; 2] = [None, None];
     for i in 0..2 {
@@ -315,16 +322,23 @@ pub fn build_match(root: &Path, src: Source, online: bool, relay: Option<matchhu
         crest_files,
     };
     std::fs::write(dir.join("summary.json"), serde_json::to_string(&s)?)?;
+    {
+        let mut g = state.lock().unwrap();
+        g.step = "done".into();
+        g.detail.clear();
+        g.frac = 1.0;
+    }
     Ok(s.id)
 }
 
-pub fn spawn_build(root: PathBuf, src: Source, online: bool, relay: Option<matchhub::sources::whoscored::Relay>, state: Shared, ctx: egui::Context) {
+pub fn spawn_build(root: PathBuf, src: Source, online: bool, relay: Option<matchhub::sources::whoscored::Relay>, browser: Option<matchhub::sources::whoscored::Browser>, state: Shared, ctx: egui::Context) {
     {
         let mut g = state.lock().unwrap();
         *g = BuildState { running: true, step: "queued".into(), ..Default::default() };
     }
+    matchhub::cancel::reset();
     std::thread::spawn(move || {
-        let r = build_match(&root, src, online, relay, state.clone());
+        let r = build_match(&root, src, online, relay, browser, state.clone());
         let mut g = state.lock().unwrap();
         g.running = false;
         match r {

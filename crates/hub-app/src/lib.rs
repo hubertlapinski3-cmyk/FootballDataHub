@@ -295,8 +295,13 @@ impl App {
             }
         }
         if let Some(e) = err {
-            self.failed = Some((self.input.clone(), e.to_string()));
-            self.toast(&ctx, &format!("Build failed: {e}"));
+            if e.trim_end().ends_with("Cancelled") {
+                // the person pressed Cancel: not a failure, no banner
+                self.toast(&ctx, "Cancelled");
+            } else {
+                self.failed = Some((self.input.clone(), e.to_string()));
+                self.toast(&ctx, &format!("Build failed: {e}"));
+            }
         }
         let bg = if dark { style::BOARD_BG } else { style::WHITE };
         let safe = self.safe_rect(&ctx);
@@ -416,6 +421,21 @@ impl App {
     }
 
     /// Clipboard text on Android (JNI); `None` on desktop, where Ctrl+V reaches the text fields directly.
+    /// The built-in browser (Android WebView) as a page fetcher for challenge-protected pages.
+    /// `None` on desktop, where the relay or a saved page covers that case.
+    pub fn browser(&self) -> Option<matchhub::sources::whoscored::Browser> {
+        #[cfg(target_os = "android")]
+        {
+            let app = self.android.clone()?;
+            let f: matchhub::sources::whoscored::PageFetcher = std::sync::Arc::new(move |url: &str, progress: &mut dyn FnMut(&str)| {
+                android_bridge::webview_fetch(&app, url, "matchCentreData", 60, &|| matchhub::cancel::requested(), progress).map_err(|e| anyhow::anyhow!("{e}"))
+            });
+            Some(matchhub::sources::whoscored::Browser(f))
+        }
+        #[cfg(not(target_os = "android"))]
+        None
+    }
+
     #[allow(unused_variables)]
     pub fn clipboard_text(&self) -> Option<String> {
         #[cfg(target_os = "android")]

@@ -11,7 +11,22 @@ mod imp {
     use std::ptr::null_mut;
     use winit::platform::android::activity::AndroidApp;
 
-    struct Env(*mut JNIEnv);
+    /// JNI environment of the current thread. A thread that was not attached already (a background
+    /// job) is attached for the lifetime of this value and detached on drop: a native thread that
+    /// exits while attached aborts the process on Android.
+    struct Env(*mut JNIEnv, Option<*mut JavaVM>);
+
+    impl Drop for Env {
+        fn drop(&mut self) {
+            if let Some(vm) = self.1 {
+                unsafe {
+                    if let Some(detach) = (**vm).DetachCurrentThread {
+                        detach(vm);
+                    }
+                }
+            }
+        }
+    }
 
     impl Env {
         unsafe fn attach(app: &AndroidApp) -> Option<Env> {
@@ -21,13 +36,15 @@ mod imp {
             }
             let mut env: *mut c_void = null_mut();
             let get = (**vm).GetEnv?;
+            let mut attached_here = None;
             if get(vm, &mut env, JNI_VERSION_1_6) != JNI_OK {
                 let att = (**vm).AttachCurrentThread?;
                 if att(vm, &mut env, null_mut()) != JNI_OK {
                     return None;
                 }
+                attached_here = Some(vm);
             }
-            Some(Env(env as *mut JNIEnv))
+            Some(Env(env as *mut JNIEnv, attached_here))
         }
         unsafe fn f(&self) -> &JNINativeInterface_ {
             &**self.0
@@ -287,6 +304,103 @@ mod imp {
                 }
                 e.void(activity, "startActivity", "(Landroid/content/Intent;)V", &[jvalue { l: chooser }])
             })
+        }
+    }
+
+    /// Loads `url` in an off-screen `WebView` and returns the rendered page HTML once it contains
+    /// `needle` (a real browser engine passes JavaScript challenges that plain HTTP cannot).
+    ///
+    /// The WebView lives in `dev.datahub.WebFetch`, a small Java class compiled to DEX by
+    /// `scripts/build_webfetch_dex.sh` and loaded here with `InMemoryDexClassLoader` (API 26+),
+    /// because a native thread cannot implement `Runnable` or `ValueCallback` itself. Blocks the
+    /// calling thread, which must be a background thread, polling every 400 ms.
+    pub fn webview_fetch(app: &AndroidApp, url: &str, needle: &str, timeout_secs: u64, cancelled: &dyn Fn() -> bool, progress: &mut dyn FnMut(&str)) -> Result<String, String> {
+        static DEX: &[u8] = include_bytes!("../assets/webfetch.dex");
+        if DEX.len() < 64 {
+            return Err("The built-in browser helper is not part of this build".into());
+        }
+        unsafe {
+            let env = Env::attach(app).ok_or("No JNI environment")?;
+            let e = &env;
+            if e.sdk_int().unwrap_or(0) < 26 {
+                return Err("The built-in browser needs Android 8 or newer".into());
+            }
+            let activity = app.activity_as_ptr() as jobject;
+            // ---- load the helper class from the embedded DEX and create the job (global ref: it outlives local frames)
+            let job: jobject = e
+                .scoped(|e| {
+                    let arr = (e.f().NewByteArray.unwrap())(e.0, DEX.len() as jsize);
+                    if e.failed() || arr.is_null() {
+                        return None;
+                    }
+                    (e.f().SetByteArrayRegion.unwrap())(e.0, arr, 0, DEX.len() as jsize, DEX.as_ptr() as *const jbyte);
+                    let bcls = e.class("java/nio/ByteBuffer")?;
+                    let (wn, ws) = (CString::new("wrap").ok()?, CString::new("([B)Ljava/nio/ByteBuffer;").ok()?);
+                    let wrap = (e.f().GetStaticMethodID.unwrap())(e.0, bcls, wn.as_ptr(), ws.as_ptr());
+                    if e.failed() || wrap.is_null() {
+                        return None;
+                    }
+                    let buf = (e.f().CallStaticObjectMethodA.unwrap())(e.0, bcls, wrap, [jvalue { l: arr }].as_ptr());
+                    if e.failed() || buf.is_null() {
+                        return None;
+                    }
+                    let parent = e.obj(activity, "getClassLoader", "()Ljava/lang/ClassLoader;", &[])?;
+                    let loader = e.new("dalvik/system/InMemoryDexClassLoader", "(Ljava/nio/ByteBuffer;Ljava/lang/ClassLoader;)V", &[jvalue { l: buf }, jvalue { l: parent }])?;
+                    let name = e.jstr("dev.datahub.WebFetch")?;
+                    let cls = e.obj(loader, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;", &[jvalue { l: name }])? as jclass;
+                    let (cn, cs) = (CString::new("<init>").ok()?, CString::new("(Landroid/app/Activity;Ljava/lang/String;Ljava/lang/String;J)V").ok()?);
+                    let ctor = (e.f().GetMethodID.unwrap())(e.0, cls, cn.as_ptr(), cs.as_ptr());
+                    if e.failed() || ctor.is_null() {
+                        return None;
+                    }
+                    let (ju, jn) = (e.jstr(url)?, e.jstr(needle)?);
+                    let o = (e.f().NewObjectA.unwrap())(e.0, cls, ctor, [jvalue { l: activity }, jvalue { l: ju }, jvalue { l: jn }, jvalue { j: (timeout_secs * 1000) as jlong }].as_ptr());
+                    if e.failed() || o.is_null() {
+                        return None;
+                    }
+                    let g = (e.f().NewGlobalRef.unwrap())(e.0, o);
+                    (!g.is_null()).then_some(g)
+                })
+                .ok_or("The built-in browser could not be started")?;
+            let free = |env: &Env| {
+                let _ = env.scoped(|e| {
+                    (e.f().DeleteGlobalRef.unwrap())(e.0, job);
+                    Some(())
+                });
+            };
+            let call = |name: &str| -> Option<String> { env.scoped(|e| e.obj(job, name, "()Ljava/lang/String;", &[]).and_then(|s| e.to_rust(s))) };
+            if env.scoped(|e| e.void(job, "start", "()V", &[])).is_none() {
+                free(&env);
+                return Err("The built-in browser could not be started".into());
+            }
+            let t0 = std::time::Instant::now();
+            let mut last_title = String::new();
+            let result = loop {
+                if cancelled() {
+                    let _ = env.scoped(|e| e.void(job, "cancel", "()V", &[]));
+                    break Err("Cancelled".to_string());
+                }
+                std::thread::sleep(std::time::Duration::from_millis(400));
+                match call("state").as_deref() {
+                    Some("done") => break call("html").filter(|h| !h.is_empty()).ok_or_else(|| "The browser returned an empty page".to_string()),
+                    Some("error") => break Err(call("message").unwrap_or_else(|| "The built-in browser failed".into())),
+                    Some("cancelled") => break Err("Cancelled".to_string()),
+                    Some(_) => {
+                        let title = call("title").unwrap_or_default();
+                        if title != last_title {
+                            last_title = title.clone();
+                            progress(&format!("browser: {}", if title.is_empty() || title == "null" { "loading" } else { &title }));
+                        }
+                    }
+                    None => break Err("The built-in browser stopped answering".to_string()),
+                }
+                if t0.elapsed().as_secs() > timeout_secs + 10 {
+                    let _ = env.scoped(|e| e.void(job, "cancel", "()V", &[]));
+                    break Err("The built-in browser timed out".to_string());
+                }
+            };
+            free(&env);
+            result
         }
     }
 

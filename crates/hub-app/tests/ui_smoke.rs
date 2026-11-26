@@ -32,7 +32,7 @@ fn built_match_screens_and_back_navigation() {
     let _ = std::fs::remove_dir_all(&dir);
     let ctx = egui::Context::default();
     let mut app = App::new(&ctx, dir.clone());
-    hub_app::library::build_match(&dir, hub_app::library::Source::Sample, false, None, Default::default()).unwrap();
+    hub_app::library::build_match(&dir, hub_app::library::Source::Sample, false, None, None, Default::default()).unwrap();
     app.lib.reload();
     let e = &app.lib.entries[0].s;
     assert_eq!(e.score, [2, 1]);

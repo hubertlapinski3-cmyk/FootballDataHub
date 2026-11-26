@@ -14,7 +14,7 @@ impl App {
         // build the bundled sample in the background so the preview shows a real board
         if self.lib.entries.is_empty() && !self.build.lock().unwrap().running && self.build.lock().unwrap().step.is_empty() {
             self.open_on_done = false;
-            library::spawn_build(self.root.clone(), Source::Sample, false, None, self.build.clone(), ui.ctx().clone());
+            library::spawn_build(self.root.clone(), Source::Sample, false, None, None, self.build.clone(), ui.ctx().clone());
         }
         let preview = self.lib.entries.iter().position(|e| e.s.source == "statsbomb").or(if self.lib.entries.is_empty() { None } else { Some(0) });
         ScrollArea::vertical().id_salt("onb").show(ui, |ui| egui::Frame::new().inner_margin(egui::Margin::symmetric(18, 0)).show(ui, |ui| {
@@ -86,12 +86,12 @@ impl App {
                             self.toast(ui.ctx(), "Online fetching is off. Set a scrape relay or the personal-use flag in Settings, or import a saved page.");
                         } else {
                             self.open_on_done = true;
-                            library::spawn_build(self.root.clone(), Source::WhoScored(s), self.prefs.online(), self.prefs.relay(), self.build.clone(), ui.ctx().clone());
+                            library::spawn_build(self.root.clone(), Source::WhoScored(s), self.prefs.online(), self.prefs.relay(), self.browser(), self.build.clone(), ui.ctx().clone());
                         }
                     }
                     if ghost(ui, "Sample match", lt()) && !running {
                         self.open_on_done = true;
-                        library::spawn_build(self.root.clone(), Source::Sample, false, None, self.build.clone(), ui.ctx().clone());
+                        library::spawn_build(self.root.clone(), Source::Sample, false, None, None, self.build.clone(), ui.ctx().clone());
                     }
                 });
                 // saved pages dropped into the import folder
@@ -102,7 +102,7 @@ impl App {
                         let name = f.file_name().map(|x| x.to_string_lossy().to_string()).unwrap_or_default();
                         if ui.add(egui::Button::new(RichText::new(format!("⤓  {name}")).font(body(14.0))).min_size(Vec2::new(ui.available_width(), 48.0))).clicked() && !running {
                             self.open_on_done = true;
-                            library::spawn_build(self.root.clone(), Source::WhoScored(f.display().to_string()), self.prefs.online(), self.prefs.relay(), self.build.clone(), ui.ctx().clone());
+                            library::spawn_build(self.root.clone(), Source::WhoScored(f.display().to_string()), self.prefs.online(), self.prefs.relay(), self.browser(), self.build.clone(), ui.ctx().clone());
                         }
                     }
                 } else {
@@ -112,16 +112,17 @@ impl App {
                 self.build_status(ui, lt());
                 if let Some((inp, msg)) = self.failed.clone() {
                     let lower = msg.to_lowercase();
-                    let offline = ["dns", "connect", "timed out", "network", "bot wall", "403", "unreachable"].iter().any(|k| lower.contains(k));
+                    let blocked = ["blocked", "403", "cloudflare", "bot wall", "429", "too many requests"].iter().any(|k| lower.contains(k));
+                    let offline = !blocked && ["could not reach", "dns", "timed out", "network"].iter().any(|k| lower.contains(k));
                     card(lt()).show(ui, |ui| {
                         ui.set_width(ui.available_width());
-                        ui.label(RichText::new(if offline { "Could not reach the source (offline or blocked)" } else { "Build failed" }).font(bold(14.0)).color(if lt() { ERROR_ROOM } else { ERROR_PRINT }));
+                        ui.label(RichText::new(if blocked { "The site blocked the request" } else if offline { "Could not reach the site" } else { "Build failed" }).font(bold(14.0)).color(if lt() { ERROR_ROOM } else { ERROR_PRINT }));
                         ui.label(RichText::new(msg.chars().take(220).collect::<String>()).font(body(12.0)).color(sub()));
                         ui.horizontal(|ui| {
                             if ghost(ui, "Retry", lt()) && !running && !inp.trim().is_empty() {
                                 self.failed = None;
                                 self.open_on_done = true;
-                                library::spawn_build(self.root.clone(), Source::WhoScored(inp.trim().to_string()), self.prefs.online(), self.prefs.relay(), self.build.clone(), ui.ctx().clone());
+                                library::spawn_build(self.root.clone(), Source::WhoScored(inp.trim().to_string()), self.prefs.online(), self.prefs.relay(), self.browser(), self.build.clone(), ui.ctx().clone());
                             }
                             if ghost(ui, "Dismiss", lt()) {
                                 self.failed = None;

@@ -180,10 +180,10 @@ fn main() {
     let mut app = App::new(&ctx, root.clone());
     if app.lib.entries.is_empty() {
         eprintln!("building sample match…");
-        library::build_match(&root, Source::Sample, false, None, Default::default()).expect("sample build");
+        library::build_match(&root, Source::Sample, false, None, None, Default::default()).expect("sample build");
         if let Some(ws) = args.get(3) {
             eprintln!("building WhoScored match…");
-            library::build_match(&root, Source::WhoScored(ws.clone()), false, None, Default::default()).expect("ws build");
+            library::build_match(&root, Source::WhoScored(ws.clone()), false, None, None, Default::default()).expect("ws build");
         }
         app.lib.reload();
     }
@@ -273,4 +273,23 @@ fn main() {
     h.app.viewer.show_export = false;
     h.app.stack = vec![Screen::Home, Screen::Settings];
     h.shot(&o("12_settings_paste.png"), 0.0);
+    // a running scrape job and a blocked-page error with Retry
+    {
+        let mut b = h.app.build.lock().unwrap();
+        b.running = true;
+        b.step = "ingest".into();
+        b.detail = "opening the page in the built-in browser".into();
+        b.frac = 0.1;
+    }
+    h.app.input = "https://fr.whoscored.com/matches/2029131/live/europe-champions-league-2026-2027-arsenal-borussia-dortmund".into();
+    h.app.stack = vec![Screen::Home];
+    h.shot(&o("13_scraping.png"), 0.0);
+    {
+        let mut b = h.app.build.lock().unwrap();
+        b.running = false;
+        b.step = "ingest".into();
+        b.detail.clear();
+    }
+    h.app.failed = Some(("2029131".into(), "www.whoscored.com blocked the request (Cloudflare, HTTP 403). Its protection runs JavaScript that plain HTTP cannot pass. Wait before retrying; repeated requests prolong the block.".into()));
+    h.shot(&o("14_scrape_error.png"), 0.0);
 }

@@ -1,6 +1,7 @@
 //! Data Hub core: ingest -> enrich -> models -> derive -> theme -> boards -> report.
 //! Platform-agnostic: used by the CLI and by the Android/desktop app.
 
+pub mod cancel;
 pub mod derive;
 pub mod fonts;
 pub mod ml;
@@ -9,6 +10,7 @@ pub mod net;
 pub mod narrative;
 pub mod reep;
 pub mod render;
+pub mod scrape;
 pub mod sim;
 pub mod sources;
 pub mod store;
@@ -44,11 +46,13 @@ pub struct BuildOptions {
     pub store_path: Option<PathBuf>,
     pub logo: Option<PathBuf>,
     pub relay: Option<sources::whoscored::Relay>,
+    /// Browser-engine fallback for challenge pages (Android WebView); None on desktop.
+    pub browser: Option<sources::whoscored::Browser>,
 }
 
 impl Default for BuildOptions {
     fn default() -> Self {
-        BuildOptions { cache_dir: PathBuf::from(".hub_cache"), online: true, overrides: None, creator: "Data Hub".into(), store_path: None, logo: None, relay: None }
+        BuildOptions { cache_dir: PathBuf::from(".hub_cache"), online: true, overrides: None, creator: "Data Hub".into(), store_path: None, logo: None, relay: None, browser: None }
     }
 }
 
@@ -92,7 +96,7 @@ fn fetch_crest(url: &str, cache: &Path, key: &str) -> Option<PathBuf> {
 
 pub fn load_match(input: &Input, opts: &BuildOptions, progress: &mut dyn FnMut(&str)) -> Result<Match> {
     match input {
-        Input::WhoScored(s) => sources::whoscored::load(s, &opts.cache_dir, if opts.online { opts.relay.as_ref() } else { None }, progress),
+        Input::WhoScored(s) => sources::whoscored::load(s, &opts.cache_dir, if opts.online { opts.relay.as_ref() } else { None }, if opts.online { opts.browser.as_ref() } else { None }, progress),
         Input::StatsBomb(root, id) => sources::statsbomb::load(root, *id),
     }
 }
