@@ -665,14 +665,14 @@ impl App {
                 card(lt()).show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     ui.horizontal(|ui| {
-                        for (k, label) in [("system", "System"), ("light", "Light"), ("dark", "Dark")] {
-                            if chip(ui, label, self.prefs.theme == k, lt()) {
+                        for (k, label) in [("dark", "Violet"), ("light", "Light")] {
+                            if chip(ui, label, self.prefs.theme == k || (k == "dark" && self.prefs.theme != "light"), lt()) {
                                 self.prefs.theme = k.to_string();
                                 self.save_prefs();
                             }
                         }
                     });
-                    ui.label(RichText::new("System follows the phone's dark mode. Light keeps the default look. Dark applies to every screen.").font(body(12.0)).color(sub()));
+                    ui.label(RichText::new("Violet is the dark violet look on every screen. Light uses white for Home, Matches, Report and Settings.").font(body(12.0)).color(sub()));
                     ui.label(RichText::new("Per screen (overrides the choice above)").font(semi(13.0)).color(fg()));
                     for (key, name) in [("home", "Home"), ("matches", "Matches"), ("report", "Report"), ("settings", "Settings")] {
                         ui.horizontal(|ui| {

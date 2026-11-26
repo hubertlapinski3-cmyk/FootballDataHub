@@ -42,6 +42,10 @@ fn col(s: &str, o: f32) -> Option<Color32> {
     if s == "none" || s.is_empty() || s.starts_with("url(") {
         return None;
     }
+    // near-black board panels become violet glass on the app backdrop
+    if matches!(s, "#0f0c15" | "#0e0b14" | "#0b0a12") {
+        return Some(Color32::from_rgba_unmultiplied(255, 255, 255, (o.clamp(0.0, 1.0) * 14.0) as u8));
+    }
     let c = style::hex(s);
     Some(Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), (o.clamp(0.0, 1.0) * 255.0) as u8))
 }
@@ -133,10 +137,13 @@ pub fn paint(ui: &Ui, rect: Rect, sc: &Scene, o: &PaintOpts) {
     let tp = |x: f32, y: f32| Pos2::new(rect.min.x + x * s, rect.min.y + y * s);
     // board background (layer two visual language)
     let mut bg = Mesh::default();
-    bg.colored_vertex(rect.left_top(), BOARD_BG);
-    bg.colored_vertex(rect.right_top(), BOARD_BG);
-    bg.colored_vertex(rect.left_bottom(), BOARD_BG2);
-    bg.colored_vertex(rect.right_bottom(), BOARD_BG2);
+    // translucent violet: the screen backdrop shows through, so boards sit on the same ground as the app
+    let top = Color32::from_rgba_unmultiplied(48, 30, 110, 70);
+    let bot = Color32::from_rgba_unmultiplied(12, 10, 30, 70);
+    bg.colored_vertex(rect.left_top(), top);
+    bg.colored_vertex(rect.right_top(), top);
+    bg.colored_vertex(rect.left_bottom(), bot);
+    bg.colored_vertex(rect.right_bottom(), bot);
     bg.add_triangle(0, 1, 2);
     bg.add_triangle(1, 3, 2);
     painter.add(Shape::mesh(bg));
