@@ -206,3 +206,4 @@ fn every_board_is_clear_on_the_phone_column() {
     }
 }
 
+

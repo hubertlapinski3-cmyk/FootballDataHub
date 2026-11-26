@@ -449,28 +449,69 @@ pub fn game_state(c: &Ctx) -> Board {
 }
 
 // ---------------------------------------------------------------- 17 VAEP
+/// Plain words for an action in the top-actions list. A touch is a miscontrol only when it lost value.
+fn action_label(kind: Kind, success: bool, v: f64) -> &'static str {
+    match kind {
+        Kind::BadTouch | Kind::BallTouch => {
+            if success {
+                "ball touch"
+            } else if v < 0.0 {
+                "miscontrol"
+            } else {
+                "heavy touch"
+            }
+        }
+        Kind::Pass => "pass",
+        Kind::Carry => "carry",
+        Kind::TakeOn => "take-on",
+        Kind::Shot => "shot",
+        Kind::Tackle => "tackle",
+        Kind::Interception => "interception",
+        Kind::Recovery => "recovery",
+        Kind::Clearance => "clearance",
+        Kind::Block => "block",
+        Kind::Foul => "foul",
+        Kind::Aerial => "aerial",
+        Kind::Save => "save",
+        Kind::Claim => "claim",
+        Kind::Sweeper => "sweep",
+        Kind::Dispossessed => "dispossessed",
+        Kind::Error => "error",
+        Kind::Challenge => "challenge",
+        _ => "action",
+    }
+}
+
 pub fn vaep(c: &Ctx) -> Board {
-    let mut s = Svg::new(W, H);
+    let mut s = Svg::new(W, 1210.0);
     let ps: Vec<&PlayerStats> = c.a.players.iter().collect();
     let best = ps.iter().max_by(|a, b| (a.vaep_off + a.vaep_def).partial_cmp(&(b.vaep_off + b.vaep_def)).unwrap());
     let title = best.map(|b| format!("{} added the most to their side's chances", b.short)).unwrap_or_else(|| "Action value".into());
     header(&mut s, c, &title, "VAEP · every action valued by how much it raised the chance of scoring and lowered the chance of conceding", Scope::Full);
+    // both sides attack up the pitch, so the totals read as a plain pair
     let (th, ta) = (c.a.t(Side::Home).vaep, c.a.t(Side::Away).vaep);
-    s.t(60.0, 205.0, &format!("{}  {}  →", c.name(Side::Home).to_uppercase(), signed(th, 2)), 16.0, 800, c.col(Side::Home), Anchor::Start);
-    s.t(1060.0, 205.0, &format!("←  {}  {}", c.name(Side::Away).to_uppercase(), signed(ta, 2)), 16.0, 800, c.col(Side::Away), Anchor::End);
-    // vertical pitch: attack points up the phone screen
-    let p = Pitch::up(60.0, 225.0, 600.0, 900.0, 0.0);
+    let (t1, t2) = (format!("{} {}", c.name(Side::Home), signed(th, 2)), format!("{} {}", c.name(Side::Away), signed(ta, 2)));
+    s.t(60.0, 202.0, &t1, 16.0, 800, c.col(Side::Home), Anchor::Start);
+    let x2 = 60.0 + text_w(&t1, 16.0, false) * 1.1 + 18.0;
+    s.t(x2 - 14.0, 202.0, "·", 16.0, 800, theme::MUTED, Anchor::Start);
+    s.t(x2, 202.0, &t2, 16.0, 800, c.col(Side::Away), Anchor::Start);
+
+    // card 1: the pitch, both teams attacking upward
+    panel(&mut s, 40.0, 216.0, 520.0, 640.0);
+    let p = Pitch::up(60.0, 256.0, 480.0, 576.0, 0.0);
+    p.label_attack(&mut s);
     p.draw(&mut s);
     let mx = ps.iter().map(|p| (p.vaep_off + p.vaep_def).abs()).fold(0.05, f64::max);
-    let mut labelled = 0;
     let mut sorted = ps.clone();
     sorted.sort_by(|a, b| (b.vaep_off + b.vaep_def).partial_cmp(&(a.vaep_off + a.vaep_def)).unwrap());
+    let mut placed: Vec<(f64, f64, f64)> = vec![];
+    let mut labels: Vec<(f64, f64, String)> = vec![];
     for (rank, pl) in sorted.iter().enumerate() {
         let sd = pl.side.unwrap();
         let (x, y) = if sd == Side::Home { (pl.avg_x, pl.avg_y) } else { (105.0 - pl.avg_x, 68.0 - pl.avg_y) };
         let (sx, sy) = p.p(x, y);
         let tot = pl.vaep_off + pl.vaep_def;
-        let r = 6.0 + 26.0 * (tot.max(0.0) / mx).sqrt();
+        let r = 5.0 + 22.0 * (tot.max(0.0) / mx).sqrt();
         s.tip = Some(format!("{} · VAEP {} (attack {}, defence {}) · {:.0} min", pl.name, signed(tot, 2), signed(pl.vaep_off, 2), signed(pl.vaep_def, 2), pl.minutes));
         s.circle(sx, sy, r, c.col(sd), "none", 0.0, r#"opacity="0.85""#);
         let given: f64 = -(pl.vaep_off.min(0.0) + pl.vaep_def.min(0.0));
@@ -478,38 +519,57 @@ pub fn vaep(c: &Ctx) -> Board {
             s.circle(sx, sy, r + 3.0, "none", c.col(sd), 1.6, r#"opacity="0.7""#);
         }
         if rank < 8 {
-            s.t(sx, sy + r + 15.0, &format!("{} {}", pl.short, signed(tot, 2)), 12.0, 700, theme::TEXT, Anchor::Middle);
-            labelled += 1;
+            let label = format!("{} {}", pl.short, signed(tot, 2));
+            let lw = text_w(&label, 12.0, false);
+            // labels step below their disc until they clear the ones already placed; a label that cannot is left off
+            let mut ly = sy + r + 15.0;
+            let mut tries = 0;
+            while placed.iter().any(|(ax, ay, aw)| (ax - sx).abs() < (lw + aw) / 2.0 + 4.0 && (ay - ly).abs() < 15.0) && tries < 6 {
+                ly += 15.0;
+                tries += 1;
+            }
+            let clear = !placed.iter().any(|(ax, ay, aw)| (ax - sx).abs() < (lw + aw) / 2.0 + 4.0 && (ay - ly).abs() < 15.0);
+            if clear && ly < 826.0 {
+                placed.push((sx, ly, lw));
+                labels.push((sx, ly, label));
+            }
         }
     }
-    let _ = labelled;
-    // top actions
-    let (px0, py0) = (1090.0, 200.0);
+
+    // names go on last so no disc covers them
+    for (lx, ly, label) in labels {
+        s.t(lx, ly, &label, 12.0, 700, theme::TEXT, Anchor::Middle);
+    }
+
+    // card 2: the twelve actions that moved the match most
+    let (px0, py0) = (1090.0, 216.0);
     panel(&mut s, px0, py0, 460.0, 640.0);
-    s.t(px0 + 24.0, py0 + 36.0, "ACTIONS THAT MOVED THE MATCH MOST", 12.5, 800, theme::TEXT, Anchor::Start);
+    s.t(px0 + 24.0, py0 + 36.0, "Actions that moved the match most", 14.0, 800, theme::TEXT, Anchor::Start);
     let ev = &c.m.events;
     let mut acts: Vec<(usize, f64)> = (0..ev.len()).map(|i| (i, c.a.values.vaep_off[i] + c.a.values.vaep_def[i])).filter(|x| x.1.abs() > 0.0).collect();
     acts.sort_by(|a, b| b.1.abs().partial_cmp(&a.1.abs()).unwrap());
     for (j, (i, v)) in acts.iter().filter(|(i, _)| ev[*i].shot.as_ref().map(|s| s.outcome != ShotOutcome::Goal).unwrap_or(true)).take(12).enumerate() {
         let e = &ev[*i];
-        let yy = py0 + 78.0 + j as f64 * 44.0;
-        let kind = format!("{:?}", e.kind).to_lowercase();
+        let yy = py0 + 82.0 + j as f64 * 44.0;
+        let kind = action_label(e.kind, e.success, *v);
         s.t(px0 + 24.0, yy, &format!("{}  {} · {}", e.label_minute(), c.pname(e.side, e.player), kind), 14.0, 600, theme::TEXT, Anchor::Start);
         s.t(px0 + 436.0, yy, &signed(*v, 2), 14.0, 800, c.col(e.side), Anchor::End);
     }
-    // bars top 6
-    let by = 870.0;
+
+    // card 3: player totals, solid = attack, faded = defence
+    panel(&mut s, 40.0, 880.0, 900.0, 250.0);
+    let by = 900.0;
     for (j, pl) in sorted.iter().take(6).enumerate() {
-        let yy = by + j as f64 * 26.0;
+        let yy = by + j as f64 * 32.0;
         let sd = pl.side.unwrap();
-        s.t(170.0, yy + 14.0, &pl.short, 12.5, 600, theme::TEXT, Anchor::End);
-        let wo = pl.vaep_off.max(0.0) / mx * 600.0;
-        let wd = pl.vaep_def.max(0.0) / mx * 600.0;
-        s.rect(180.0, yy, wo, 18.0, c.col(sd), "");
-        s.rect(180.0 + wo, yy, wd, 18.0, &c.th.team(sd).muted, "");
-        s.t(186.0 + wo + wd, yy + 14.0, &signed(pl.vaep_off + pl.vaep_def, 2), 12.5, 800, theme::TEXT, Anchor::Start);
+        s.t(200.0, yy + 14.0, &pl.short, 12.5, 600, theme::TEXT, Anchor::End);
+        let wo = pl.vaep_off.max(0.0) / mx * 500.0;
+        let wd = pl.vaep_def.max(0.0) / mx * 500.0;
+        s.rect(212.0, yy, wo, 17.0, c.col(sd), "");
+        s.rect(212.0 + wo, yy, wd, 17.0, &c.th.team(sd).muted, "");
+        s.t(220.0 + wo + wd, yy + 14.0, &signed(pl.vaep_off + pl.vaep_def, 2), 12.5, 800, theme::TEXT, Anchor::Start);
     }
-    s.t(1060.0, by + 150.0, "SOLID = ATTACK · FADED = DEFENCE. Disc = a player at the average spot of their actions, sized by value added; ring = gave value away.", 11.5, 400, theme::MUTED, Anchor::End);
+    s.t(64.0, 1116.0, "Solid = attack · faded = defence · disc = net VAEP · ring = value lost", 11.5, 400, theme::MUTED, Anchor::Start);
     footer(&mut s, c, "Local action values rank the recorded contributions under the named model (VAEP fitted on StatsBomb Open Data; keeper saves count as defence). They are model estimates, not an all-round player rating.");
     Board::new("17_vaep", "VAEP action value", s)
 }
