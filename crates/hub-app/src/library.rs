@@ -103,7 +103,8 @@ pub struct Entry {
 
 pub struct Library {
     pub root: PathBuf,
-    pub entries: Vec<Entry>,
+    /// shared, immutable match summaries: screens take cheap `Arc` handles, never deep copies
+    pub entries: Vec<std::sync::Arc<Entry>>,
 }
 
 impl Library {
@@ -122,7 +123,7 @@ impl Library {
                 let p = d.path().join("summary.json");
                 if let Ok(s) = std::fs::read_to_string(&p) {
                     if let Ok(s) = serde_json::from_str::<Summary>(&s) {
-                        v.push(Entry { dir: d.path(), s });
+                        v.push(std::sync::Arc::new(Entry { dir: d.path(), s }));
                     }
                 }
             }

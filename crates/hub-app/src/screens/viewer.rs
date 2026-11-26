@@ -18,7 +18,7 @@ impl App {
             return;
         }
         let e = self.lib.entries[m].clone();
-        let Some(meta) = e.s.boards.iter().find(|b| b.id == board).cloned() else {
+        let Some(meta) = e.s.boards.iter().find(|b| b.id == board) else {
             self.back();
             return;
         };
@@ -31,7 +31,12 @@ impl App {
                 if back_button(ui, WHITE).clicked() {
                     self.back();
                 }
-                ui.add(egui::Label::new(RichText::new(&meta.title).font(head(if meta.title.chars().count() > 14 { 19.0 } else { 22.0 })).color(WHITE)).truncate());
+                // the title gets what the two icons leave, then truncates
+                let title_w = (ui.available_width() - 2.0 * 48.0 - 24.0 - if (meta.height / meta.width) < 1.1 { 60.0 } else { 0.0 }).max(60.0);
+                ui.allocate_ui_with_layout(Vec2::new(title_w, 48.0), Layout::left_to_right(Align::Center), |ui| {
+                    ui.set_max_width(title_w);
+                    ui.add(egui::Label::new(RichText::new(&meta.title).font(head(if meta.title.chars().count() > 14 { 19.0 } else { 22.0 })).color(WHITE)).truncate());
+                });
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     let fill_zoom = (canvas_h_hint(full.height()) / (full.width() * (meta.height / meta.width) as f32)).clamp(1.0, 3.0);
                     if (meta.height / meta.width) < 1.1 && ui.add(egui::Button::new(RichText::new(if self.viewer.zoom > 1.01 { "Fit" } else { "Fill" }).font(semi(14.0)).color(PRIMARY_ON_DARK)).fill(Color32::TRANSPARENT).min_size(Vec2::splat(48.0))).clicked() {
@@ -87,6 +92,7 @@ impl App {
         // ---- board canvas
         let canvas = Rect::from_min_max(egui::pos2(full.left(), full.top() + chrome), egui::pos2(full.right(), full.bottom() - 8.0));
         let resp = ui.interact(canvas, ui.scope_id().with("canvas"), Sense::click_and_drag());
+        self.exclusion = Some(canvas);
         let aspect = (meta.height / meta.width) as f32;
         // portrait boards fit the width and scroll; landscape boards fit whole
         let fit_w = if aspect > 1.1 { canvas.width() } else { canvas.width().min(canvas.height() / aspect) };

@@ -63,6 +63,7 @@ impl App {
     // ------------------------------------------------------------------ 2 home
     pub fn home(&mut self, ui: &mut Ui) {
         ScrollArea::vertical().id_salt("home").show(ui, |ui| {
+            ui.set_max_width(ui.available_width()); // wrap to the viewport, never widen it
             egui::Frame::new().inner_margin(egui::Margin::symmetric(16, 12)).show(ui, |ui| {
                 ui.label(RichText::new("Data Hub").font(head(34.0)).color(fg()));
                 ui.label(RichText::new("Paste a WhoScored match ID or URL").font(body(13.5)).color(sub()));
@@ -125,15 +126,23 @@ impl App {
                     ui.label(RichText::new("No matches yet. Build one above or try the sample.").color(sub()));
                 }
                 let mut open = None;
-                ScrollArea::horizontal().id_salt("latest").show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        for i in 0..self.lib.entries.len().min(8) {
-                            if self.match_card(ui, i, if self.lib.entries.len() == 1 { ui.available_width() - 34.0 } else { 280.0 }) {
-                                open = Some(i);
+                if self.lib.entries.len() == 1 {
+                    // one match: a full-width card, outside any horizontal scroller (which would give it unbounded width)
+                    let w = ui.available_width() - 34.0;
+                    if self.match_card(ui, 0, w) {
+                        open = Some(0);
+                    }
+                } else {
+                    ScrollArea::horizontal().id_salt("latest").show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            for i in 0..self.lib.entries.len().min(8) {
+                                if self.match_card(ui, i, 280.0) {
+                                    open = Some(i);
+                                }
                             }
-                        }
+                        });
                     });
-                });
+                }
                 if let Some(i) = open {
                     self.push(Screen::Hub(i));
                 }
@@ -211,6 +220,7 @@ impl App {
                 return;
             }
             ScrollArea::vertical().id_salt("matches").show(ui, |ui| {
+                ui.set_max_width(ui.available_width()); // wrap to the viewport, never widen it
                 for i in 0..self.lib.entries.len() {
                     let a = self.stagger(i);
                     ui.set_opacity(a);
@@ -263,18 +273,24 @@ impl App {
                 self.back();
             }
             ScrollArea::vertical().id_salt("hub").show(ui, |ui| {
+                ui.set_max_width(ui.available_width()); // wrap to the viewport, never widen it
                 self.match_header(ui, m, "Full match");
                 ui.add_space(8.0);
                 ui.label(RichText::new(&e.s.headline).font(head(24.0)).color(WHITE));
                 super::super::style::definition_chip(ui, "box entry followed by a shot = shot later in the same possession", true);
                 ui.add_space(4.0);
                 self.momentum_strip(ui, m, 70.0);
-                ui.horizontal_wrapped(|ui| {
-                    metric_chip(ui, "npxG", &format!("{:.2}–{:.2}", e.s.npxg[0], e.s.npxg[1]), true);
-                    metric_chip(ui, "xPts", &format!("{:.1}–{:.1}", e.s.xpts[0], e.s.xpts[1]), true);
-                    let f = |v: Option<f64>| v.map(|x| format!("{x:.1}")).unwrap_or("–".into());
-                    metric_chip(ui, "PPDA", &format!("{}–{}", f(e.s.ppda[0]), f(e.s.ppda[1])), true);
-                });
+                // chips are frames, which wrapped layouts cannot measure ahead: chunk rows by width instead
+                let f = |v: Option<f64>| v.map(|x| format!("{x:.1}")).unwrap_or("–".into());
+                let chips = [("npxG", format!("{:.2}–{:.2}", e.s.npxg[0], e.s.npxg[1])), ("xPts", format!("{:.1}–{:.1}", e.s.xpts[0], e.s.xpts[1])), ("PPDA", format!("{}–{}", f(e.s.ppda[0]), f(e.s.ppda[1])))];
+                let per_row = ((ui.available_width() / (150.0 * text_scale_pct() as f32 / 100.0)).floor() as usize).clamp(1, 3);
+                for row in chips.chunks(per_row) {
+                    ui.horizontal(|ui| {
+                        for (k, v) in row {
+                            metric_chip(ui, k, v, true);
+                        }
+                    });
+                }
                 ui.add_space(6.0);
                 if let Some(i) = tab_row(ui, &["Boards", "Report", "Players", "Compare"], 0) {
                     match i {
@@ -359,7 +375,7 @@ impl App {
         if self.report_cache.as_ref().map(|r| r.0) != Some(m) {
             let p = self.lib.entries[m].dir.join("report.json");
             match std::fs::read_to_string(&p).ok().and_then(|s| serde_json::from_str(&s).ok()) {
-                Some(r) => self.report_cache = Some((m, r)),
+                Some(r) => self.report_cache = Some((m, std::sync::Arc::new(r))),
                 None => {
                     self.toast(ui.ctx(), "Report missing for this match");
                     self.back();
@@ -375,6 +391,7 @@ impl App {
                 self.back();
             }
             ScrollArea::vertical().id_salt("report").show(ui, |ui| {
+                ui.set_max_width(ui.available_width()); // wrap to the viewport, never widen it
                 ui.label(RichText::new(&rep.headline).font(head(34.0)).color(fg()));
                 rich_paragraph(ui, &rep.standfirst, &e.s.home, &e.s.away, hc, ac, 16.0);
                 ui.add_space(6.0);
@@ -411,6 +428,7 @@ impl App {
                 self.back();
             }
             ScrollArea::vertical().id_salt("players").show(ui, |ui| {
+                ui.set_max_width(ui.available_width()); // wrap to the viewport, never widen it
                 for side in 0..2 {
                     let col = self.team_col(m, side);
                     ui.add_space(6.0);
@@ -427,14 +445,25 @@ impl App {
                                 let (rr, _) = ui.allocate_exact_size(Vec2::splat(34.0), Sense::hover());
                                 ui.painter().circle_filled(rr.center(), 17.0, col);
                                 ui.painter().text(rr.center(), egui::Align2::CENTER_CENTER, p.shirt.to_string(), bold(13.0), on(col));
-                                ui.vertical(|ui| {
+                                // text column takes what is left after the value; on narrow screens the value moves under the text
+                                let v = p.vaep;
+                                let value = RichText::new(format!("{}{:.2}", if v >= 0.0 { "▲ +" } else { "▼ " }, v)).font(head(18.0)).color(if v >= 0.0 { SECONDARY } else { ERROR_ROOM });
+                                let reserve = 96.0 * text_scale_pct() as f32 / 100.0;
+                                let narrow = ui.available_width() - reserve < 170.0;
+                                let col_w = if narrow { ui.available_width() } else { ui.available_width() - reserve };
+                                ui.allocate_ui_with_layout(Vec2::new(col_w, 0.0), Layout::top_down(Align::Min), |ui| {
+                                    ui.set_max_width(col_w);
                                     ui.label(RichText::new(&p.name).font(semi(15.0)).color(WHITE));
                                     ui.label(RichText::new(format!("{} · {:.0} min · {} touches · {} shots", p.role, p.minutes, p.touches, p.shots)).font(body(12.0)).color(DARK_TEXT2));
+                                    if narrow {
+                                        ui.label(value.clone());
+                                    }
                                 });
-                                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                                    let v = p.vaep;
-                                    ui.label(RichText::new(format!("{}{:.2}", if v >= 0.0 { "▲ +" } else { "▼ " }, v)).font(head(18.0)).color(if v >= 0.0 { SECONDARY } else { Color32::from_rgb(0xff, 0x6b, 0x81) }));
-                                });
+                                if !narrow {
+                                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                        ui.label(value);
+                                    });
+                                }
                             });
                         });
                         let resp = r.response.interact(Sense::click());
@@ -461,6 +490,7 @@ impl App {
                 self.back();
             }
             ScrollArea::vertical().id_salt("player").show(ui, |ui| {
+                ui.set_max_width(ui.available_width()); // wrap to the viewport, never widen it
                 ui.label(RichText::new(&p.name).font(head(32.0)).color(WHITE));
                 ui.label(RichText::new(format!("{} · {} · Touches {} · Shots {}", if p.side == 0 { &e.s.home } else { &e.s.away }, p.role, p.touches, p.shots)).font(body(13.0)).color(DARK_TEXT2));
                 ui.columns(3, |c| {
@@ -508,6 +538,7 @@ impl App {
                 self.compare.right = Some((teams[1].0, teams[1].1));
             }
             ScrollArea::vertical().id_salt("compare_screen").show(ui, |ui| {
+                ui.set_max_width(ui.available_width()); // wrap to the viewport, never widen it
                 for (k, label) in [(0, "Left team"), (1, "Right team")] {
                     let cur = if k == 0 { self.compare.left } else { self.compare.right };
                     let cur_label = teams.iter().find(|t| Some((t.0, t.1)) == cur).map(|t| t.2.clone()).unwrap_or_default();
@@ -549,7 +580,8 @@ impl App {
                     return;
                 }
                 let (Some(l), Some(r)) = (self.compare.left, self.compare.right) else { return };
-                let (tl, tr) = (self.lib.entries[l.0].s.teams[l.1].clone(), self.lib.entries[r.0].s.teams[r.1].clone());
+                let (el, er) = (self.lib.entries[l.0].clone(), self.lib.entries[r.0].clone());
+                let (tl, tr) = (&el.s.teams[l.1], &er.s.teams[r.1]);
                 let (cl, cr) = (self.team_col(l.0, l.1), self.team_col(r.0, r.1));
                 ui.add_space(6.0);
                 ui.set_max_width(ui.available_width() - 26.0);
@@ -657,6 +689,7 @@ impl App {
                 self.back();
             }
             ScrollArea::vertical().id_salt("settings").show(ui, |ui| {
+                ui.set_max_width(ui.available_width()); // wrap to the viewport, never widen it
                 section_title(ui, "Data sources", lt());
                 for (n, d) in [
                     ("Opta via WhoScored", "Primary event stream: every on-ball event with coordinates and qualifiers."),
@@ -683,12 +716,19 @@ impl App {
                     ui.set_width(ui.available_width());
                     ui.label(RichText::new("WhoScored blocks plain requests, so links are scraped by a headless browser in your repository's scrape-whoscored workflow (built on ricardoherediaj/football-analytics-tutorials). The app reads finished matches from the repo and, with a token, starts the run itself.").font(body(12.5)).color(sub()));
                     ui.label(RichText::new("Repository (owner/name)").font(semi(13.0)));
-                    if ui.add(egui::TextEdit::singleline(&mut self.prefs.relay_repo).desired_width(f32::INFINITY).min_size(Vec2::new(0.0, 48.0))).lost_focus() {
+                    let rr = ui.add(egui::TextEdit::singleline(&mut self.prefs.relay_repo).desired_width(f32::INFINITY).min_size(Vec2::new(0.0, 48.0)));
+                    if rr.gained_focus() {
+                        rr.scroll_to_me(Some(Align::Center));
+                    }
+                    if rr.lost_focus() {
                         self.save_prefs();
                     }
                     ui.label(RichText::new("Token (fine-grained: Actions read/write + Contents read on that repo only)").font(semi(13.0)));
                     ui.horizontal(|ui| {
                         let r = ui.add(egui::TextEdit::singleline(&mut self.prefs.relay_token).password(!self.show_token).desired_width(ui.available_width() - 70.0).min_size(Vec2::new(0.0, 48.0)));
+                        if r.gained_focus() {
+                            r.scroll_to_me(Some(Align::Center));
+                        }
                         if r.lost_focus() {
                             self.save_prefs();
                         }
@@ -705,7 +745,7 @@ impl App {
                 section_title(ui, "Theme", lt());
                 card(lt()).show(ui, |ui| {
                     ui.set_width(ui.available_width());
-                    ui.horizontal(|ui| {
+                    ui.horizontal_wrapped(|ui| {
                         for (k, label) in [("dark", "Darkroom"), ("light", "Print")] {
                             if chip(ui, label, self.prefs.theme == k || (k == "dark" && self.prefs.theme != "light"), lt()) {
                                 self.prefs.theme = k.to_string();
@@ -716,7 +756,7 @@ impl App {
                     ui.label(RichText::new("Darkroom is the dark forest look. Print is warm paper for Home, Matches, Report and Settings; boards always stay in Darkroom.").font(body(12.0)).color(sub()));
                     ui.label(RichText::new("Per screen (overrides the choice above)").font(semi(13.0)).color(fg()));
                     for (key, name) in [("home", "Home"), ("matches", "Matches"), ("report", "Report"), ("settings", "Settings")] {
-                        ui.horizontal(|ui| {
+                        ui.horizontal_wrapped(|ui| {
                             ui.label(RichText::new(name).font(body(14.0)).color(fg()));
                             let cur = self.prefs.screen_theme.get(key).cloned().unwrap_or_default();
                             for (v, label) in [("", "Auto"), ("light", "Light"), ("dark", "Dark")] {
@@ -736,14 +776,15 @@ impl App {
                 card(lt()).show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     ui.horizontal_wrapped(|ui| {
-                        for pct in [100u32, 115, 130, 150] {
-                            if chip(ui, &format!("{pct}%"), self.prefs.text_scale == pct, lt()) {
+                        for pct in [0u32, 100, 115, 130, 150] {
+                            let label = if pct == 0 { format!("System ({}%)", self.sys_text_scale) } else { format!("{pct}%") };
+                            if chip(ui, &label, self.prefs.text_scale == pct, lt()) {
                                 self.prefs.text_scale = pct;
                                 self.save_prefs();
                             }
                         }
                     });
-                    ui.label(RichText::new("Applies to every screen. Boards keep their own type and zoom with pinch.").font(body(12.0)).color(sub()));
+                    ui.label(RichText::new("System follows Android's font size. Applies to every screen; boards keep their own type and zoom with pinch.").font(body(12.0)).color(sub()));
                 });
                 section_title(ui, "Motion", lt());
                 card(lt()).show(ui, |ui| {
@@ -758,7 +799,7 @@ impl App {
                 let cache = self.root.join("cache");
                 let mdir = self.root.join("matches");
                 ui.label(format!("Source cache: {:.1} MB   ·   Built matches: {:.1} MB", library::dir_size(&cache) as f64 / 1e6, library::dir_size(&mdir) as f64 / 1e6));
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     if ghost(ui, "Clear source cache", lt()) {
                         let _ = std::fs::remove_dir_all(&cache);
                         self.toast(ui.ctx(), "Source cache cleared");

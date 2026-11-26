@@ -262,4 +262,6 @@ fn main() {
     h.shot(&o("7_compare.png"), 0.0);
     h.app.stack = vec![Screen::Home, Screen::Settings];
     h.shot(&o("8_settings.png"), 0.0);
+    h.app.stack = vec![Screen::Home, Screen::Matches];
+    h.shot(&o("9_matches.png"), 0.0);
 }

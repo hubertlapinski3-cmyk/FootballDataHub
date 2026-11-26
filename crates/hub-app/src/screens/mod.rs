@@ -144,14 +144,15 @@ impl App {
 
     /// Board-style header: crests, names in team colours, score, scope label and split rule.
     pub fn match_header(&mut self, ui: &mut Ui, m: usize, scope: &str) {
-        let s = self.lib.entries[m].s.clone();
+        let entry = self.lib.entries[m].clone();
+        let s = &entry.s;
         let (hc, ac) = (self.team_col(m, 0), self.team_col(m, 1));
         ui.add_space(6.0);
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 8.0;
             let w = ui.available_width();
             // names shrink to fit the side (full -> short -> code) so the row never widens the screen
-            let chars = (((w * 0.38 - 40.0) / (bold(14.0).size * 0.62)).floor() as usize).clamp(3, 12);
+            let chars = (((w * 0.38 - 44.0) / (bold(14.0).size * 0.72)).floor() as usize).clamp(3, 12);
             ui.allocate_ui_with_layout(Vec2::new(w * 0.38, 40.0), Layout::right_to_left(Align::Center), |ui| {
                 self.crest(ui, m, 0, 30.0);
                 ui.label(RichText::new(fit_name(&s.home, &s.home_short, chars)).font(bold(14.0)).color(hc));
@@ -198,7 +199,8 @@ impl App {
             let c = hex(&s.colours[*side]);
             p.circle(egui::pos2(x(i), mid), 5.0, c, Stroke::new(1.5, WHITE));
         }
-        p.text(rect.left_top() + Vec2::new(8.0, 6.0), egui::Align2::LEFT_TOP, "MOMENTUM · home above, away below", body(12.0), DARK_TEXT2);
+        let label = if rect.width() < 360.0 * text_scale_pct() as f32 / 100.0 { "Momentum" } else { "Momentum · home above, away below" };
+        p.text(rect.left_top() + Vec2::new(8.0, 6.0), egui::Align2::LEFT_TOP, label, body(12.0), DARK_TEXT2);
     }
 
     pub fn build_status(&self, ui: &mut Ui, dark: bool) {
@@ -236,23 +238,29 @@ impl App {
 
     /// Match card used on home and the match list.
     pub fn match_card(&mut self, ui: &mut Ui, m: usize, width: f32) -> bool {
-        let e: Entry = self.lib.entries[m].clone();
+        let e = self.lib.entries[m].clone();
         let mut clicked = false;
         let r = card(lt()).show(ui, |ui| ui.vertical(|ui| {
             ui.set_width(width);
             ui.horizontal(|ui| {
                 self.crest(ui, m, 0, 28.0);
-                let chars = (((width - 90.0) / 2.0 / (head(19.0).size * 0.5)).floor() as usize).clamp(3, 11);
+                let chars = (((width - 100.0) / 2.0 / (head(19.0).size * 0.66)).floor() as usize).clamp(3, 11);
                 ui.label(RichText::new(format!("{}  {}–{}  {}", fit_name(&e.s.home, &e.s.home_short, chars), e.s.score[0], e.s.score[1], fit_name(&e.s.away, &e.s.away_short, chars))).font(head(19.0)).color(fg()));
                 self.crest(ui, m, 1, 28.0);
             });
             ui.label(RichText::new(format!("{} · {}", if e.s.competition.is_empty() { "Match" } else { &e.s.competition }, e.s.date)).font(body(12.0)).color(sub()));
-            ui.horizontal_wrapped(|ui| {
-                metric_chip(ui, "npxG", &format!("{:.2}–{:.2}", e.s.npxg[0], e.s.npxg[1]), lt());
-                let f = |v: Option<f64>| v.map(|x| format!("{x:.1}")).unwrap_or("–".into());
-                metric_chip(ui, "PPDA", &format!("{}–{}", f(e.s.ppda[0]), f(e.s.ppda[1])), lt());
-                metric_chip(ui, "xPts", &format!("{:.1}–{:.1}", e.s.xpts[0], e.s.xpts[1]), lt());
-            });
+            // two chips per row on compact widths or large text, three otherwise: never clipped
+            let f = |v: Option<f64>| v.map(|x| format!("{x:.1}")).unwrap_or("–".into());
+            let chips = [("npxG", format!("{:.2}–{:.2}", e.s.npxg[0], e.s.npxg[1])), ("PPDA", format!("{}–{}", f(e.s.ppda[0]), f(e.s.ppda[1]))), ("xPts", format!("{:.1}–{:.1}", e.s.xpts[0], e.s.xpts[1]))];
+            let chip_w = 150.0 * style::text_scale_pct() as f32 / 100.0;
+            let per_row = ((width / chip_w).floor() as usize).clamp(1, 3);
+            for row in chips.chunks(per_row) {
+                ui.horizontal(|ui| {
+                    for (k, v) in row {
+                        metric_chip(ui, k, v, lt());
+                    }
+                });
+            }
         }));
         let resp = r.response.interact(Sense::click());
         press_overlay(ui, &resp, 18.0, lt());

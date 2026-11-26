@@ -107,6 +107,8 @@ pub fn install_fonts(ctx: &egui::Context) {
     fonts.families.insert(FontFamily::Name("b_body".into()), fam(&["Inter Regular"]));
     let prop = fonts.families.entry(FontFamily::Proportional).or_default();
     prop.insert(0, "Schibsted Regular".into());
+    // symbols Schibsted lacks (▲ ▼ ■) fall back to Inter before the emoji fonts
+    prop.insert(1, "Inter Regular".into());
     ctx.set_fonts(fonts);
 }
 
@@ -115,6 +117,10 @@ static TEXT_SCALE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::
 /// so the setting lives in the app; every font helper below applies it.
 pub fn set_text_scale(pct: u32) {
     TEXT_SCALE.store(pct.clamp(100, 160), std::sync::atomic::Ordering::Relaxed);
+}
+/// Current text size in percent.
+pub fn text_scale_pct() -> u32 {
+    TEXT_SCALE.load(std::sync::atomic::Ordering::Relaxed)
 }
 fn ts() -> f32 {
     TEXT_SCALE.load(std::sync::atomic::Ordering::Relaxed) as f32 / 100.0
@@ -262,7 +268,12 @@ pub fn top_bar(ui: &mut Ui, title: &str, dark: bool) -> bool {
         if r.clicked() {
             back = true;
         }
-        ui.label(RichText::new(title).font(head(24.0)).color(c));
+        // long titles truncate instead of widening the screen
+        let w = ui.available_width();
+        ui.allocate_ui_with_layout(Vec2::new(w, 48.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+            ui.set_max_width(w);
+            ui.add(egui::Label::new(RichText::new(title).font(head(24.0)).color(c)).truncate());
+        });
     });
     back
 }

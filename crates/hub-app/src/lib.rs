@@ -1,6 +1,7 @@
 //! Data Hub app: the viewing and browsing layer for the hub-core pipeline.
 //! One egui codebase for Android (NativeActivity via android-activity) and desktop.
 
+pub mod android_bridge;
 pub mod library;
 pub mod raster;
 pub mod scene;
@@ -51,13 +52,9 @@ pub struct Prefs {
     /// Per-screen override: key "home" | "matches" | "report" | "settings", value "light" | "dark" (absent = follow `theme`).
     #[serde(default)]
     pub screen_theme: std::collections::BTreeMap<String, String>,
-    /// In-app text size in percent (100..=150).
-    #[serde(default = "default_text_scale")]
+    /// In-app text size in percent (100..=150); 0 follows the system font scale.
+    #[serde(default)]
     pub text_scale: u32,
-}
-
-fn default_text_scale() -> u32 {
-    100
 }
 
 fn default_theme() -> String {
@@ -125,7 +122,7 @@ pub struct App {
     pub android: Option<winit::platform::android::activity::AndroidApp>,
     pub kb_shown: bool,
     pub open_on_done: bool,
-    pub report_cache: Option<(usize, matchhub::narrative::Report)>,
+    pub report_cache: Option<(usize, std::sync::Arc<matchhub::narrative::Report>)>,
     pub manifest_cache: Option<(usize, serde_json::Value)>,
     pub scenes: scene::SceneCache,
     /// time the current screen appeared (drives staggered entrance motion)
@@ -136,6 +133,15 @@ pub struct App {
     pub failed: Option<(String, String)>,
     /// match index awaiting a second tap to delete
     pub confirm_delete: Option<usize>,
+    /// system font scale in percent (Android Configuration.fontScale), 100 on desktop
+    pub sys_text_scale: u32,
+    #[allow(dead_code)]
+    last_sys_poll: f64,
+    /// bottom of the window covered by the soft keyboard, in points
+    pub ime_bottom: f32,
+    /// board canvas that should be shielded from the system edge-back gesture (set by the viewer)
+    pub exclusion: Option<egui::Rect>,
+    applied_exclusion: Option<egui::Rect>,
 }
 
 impl App {
@@ -175,6 +181,11 @@ impl App {
             show_token: false,
             failed: None,
             confirm_delete: None,
+            sys_text_scale: 100,
+            last_sys_poll: -10.0,
+            ime_bottom: 0.0,
+            exclusion: None,
+            applied_exclusion: None,
         }
     }
 
@@ -234,7 +245,7 @@ impl App {
         let scr = self.screen();
         let global = match self.prefs.theme.as_str() {
             "dark" => true,
-            "light" => false,
+            "light" | "print" => false,
             _ => true,
         };
         let key = match scr {
@@ -250,7 +261,9 @@ impl App {
             _ => global,
         };
         style::set_force_dark(force);
-        style::set_text_scale(if self.prefs.text_scale == 0 { 100 } else { self.prefs.text_scale });
+        self.poll_system(&ctx);
+        style::set_text_scale(if self.prefs.text_scale == 0 { self.sys_text_scale } else { self.prefs.text_scale });
+        self.exclusion = None;
         let dark = scr.dark() || force;
         if self.last_dark != Some(dark) {
             style::apply_visuals(&ctx, dark);
@@ -329,6 +342,7 @@ impl App {
             ctx.request_repaint_after(std::time::Duration::from_millis(120));
         }
         self.soft_keyboard(&ctx);
+        self.apply_gesture_exclusion(&ctx);
     }
 
     /// Drawable area: the window minus system bars. Android reports the content rect in pixels;
@@ -354,10 +368,49 @@ impl App {
                 }
             }
             // landscape cutouts and side navigation bars come in as left/right insets
-            return egui::Rect::from_min_max(egui::pos2(full.left() + left, full.top() + top.max(36.0)), egui::pos2(full.right() - right, full.bottom() - bottom.max(44.0)));
+            return egui::Rect::from_min_max(egui::pos2(full.left() + left, full.top() + top.max(36.0)), egui::pos2(full.right() - right, full.bottom() - bottom.max(44.0).max(self.ime_bottom)));
         }
         #[cfg(not(target_os = "android"))]
         full
+    }
+
+    /// System font scale (every 2 s, so a change in Android settings applies on return) and the
+    /// keyboard inset (every frame while the keyboard is up).
+    #[allow(unused_variables)]
+    fn poll_system(&mut self, ctx: &egui::Context) {
+        #[cfg(target_os = "android")]
+        if let Some(a) = &self.android {
+            if self.now - self.last_sys_poll > 2.0 {
+                self.last_sys_poll = self.now;
+                if let Some(fs) = android_bridge::font_scale(a) {
+                    self.sys_text_scale = ((fs * 100.0).round() as u32).clamp(100, 160);
+                }
+            }
+            self.ime_bottom = if self.kb_shown { android_bridge::bottom_obscured_px(a).map(|px| px as f32 / ctx.pixels_per_point().max(0.5)).unwrap_or(0.0) } else { 0.0 };
+        }
+    }
+
+    /// Shield the left and right edges of an interactive board from the edge-back gesture
+    /// (Android caps exclusion at 200dp of height per edge).
+    #[allow(unused_variables)]
+    fn apply_gesture_exclusion(&mut self, ctx: &egui::Context) {
+        if self.exclusion == self.applied_exclusion {
+            return;
+        }
+        self.applied_exclusion = self.exclusion;
+        #[cfg(target_os = "android")]
+        if let Some(a) = &self.android {
+            let ppp = ctx.pixels_per_point();
+            let rects: Vec<[i32; 4]> = match self.exclusion {
+                Some(r) => {
+                    let mid = r.center().y;
+                    let (top, bot) = (((mid - 100.0).max(r.top()) * ppp) as i32, ((mid + 100.0).min(r.bottom()) * ppp) as i32);
+                    vec![[(r.left() * ppp) as i32, top, ((r.left() + 32.0) * ppp) as i32, bot], [((r.right() - 32.0) * ppp) as i32, top, (r.right() * ppp) as i32, bot]]
+                }
+                None => vec![],
+            };
+            let _ = android_bridge::set_gesture_exclusion(a, &rects);
+        }
     }
 
     #[allow(unused_variables)]
