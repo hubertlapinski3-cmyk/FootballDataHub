@@ -499,11 +499,22 @@ fn fit_texts(prims: &mut Vec<Prim>) -> (f32, Vec<(f32, f32)>) {
             1 => 2.0 * (x - TEXT_LO).min(TEXT_HI - x),
             _ => x - TEXT_LO,
         };
+        let x_in = x;
         let x = match a {
             0 => x.clamp(TEXT_LO, (TEXT_HI - tw).max(TEXT_LO)),
             1 => x.clamp(TEXT_LO + tw / 2.0, (TEXT_HI - tw / 2.0).max(TEXT_LO + tw / 2.0)),
             _ => x.clamp((TEXT_LO + tw).min(TEXT_HI), TEXT_HI),
         };
+        // a clamped label takes its legend key along
+        if a == 0 && (x - x_in).abs() > 0.01 {
+            for j in key_markers(prims, x_in, y, &[]) {
+                match &mut prims[j] {
+                    Prim::R { x: px, .. } | Prim::C { x: px, .. } => *px += x - x_in,
+                    Prim::L { p, .. } | Prim::P { p, .. } => p.iter_mut().for_each(|q| q[0] += x - x_in),
+                    _ => {}
+                }
+            }
+        }
         let avail = room(x).max(40.0);
         if tw <= avail {
             prims[i] = Prim::T { x, y, runs, sz, w, hd, a, o, l };
