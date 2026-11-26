@@ -257,24 +257,7 @@ pub fn chance_vs_finishing(c: &Ctx) -> Board {
     let mut s = Svg::new(W, H);
     header(&mut s, c, "Chance Quality against Finishing", "Pre-shot xG, post-shot xG once the placement is known, and the goals that followed", Scope::Full);
     let (h, a) = (c.a.t(Side::Home), c.a.t(Side::Away));
-    s.h(60.0, 210.0, "From chance to goal", 24.0, theme::TEXT, Anchor::Start);
-    let groups = [("Chances created", h.npxg, a.npxg), ("Reached the frame", h.xg_on_target, a.xg_on_target), ("Value once struck", h.xgot, a.xgot), ("Goals", (h.goals - h.sp_pen.goals) as f64, (a.goals - a.sp_pen.goals) as f64)];
-    let mx = groups.iter().map(|g| g.1.max(g.2)).fold(1.0, f64::max) * 1.15;
-    let (x0, w) = (230.0, 470.0);
-    for (i, (l, hv, av)) in groups.iter().enumerate() {
-        let y = 250.0 + i as f64 * 160.0;
-        s.t(x0 - 12.0, y + 42.0, l, 14.0, 500, theme::TEXT, Anchor::End);
-        s.rect(x0, y, hv / mx * w, 36.0, c.col(Side::Home), "");
-        s.t(x0 + hv / mx * w + 8.0, y + 24.0, &if i == 3 { format!("{hv:.0}") } else { format!("{hv:.2}") }, 14.0, 800, theme::TEXT, Anchor::Start);
-        s.rect(x0, y + 44.0, av / mx * w, 36.0, c.col(Side::Away), "");
-        s.t(x0 + av / mx * w + 8.0, y + 68.0, &if i == 3 { format!("{av:.0}") } else { format!("{av:.2}") }, 14.0, 800, theme::TEXT, Anchor::Start);
-    }
-    let mut lx = x0;
-    lx = legend_item(&mut s, lx, 240.0 - 10.0, "square", c.col(Side::Home), &c.name(Side::Home));
-    legend_item(&mut s, lx, 240.0 - 10.0, "square", c.col(Side::Away), &c.name(Side::Away));
-    // dumbbells
-    s.h(820.0, 210.0, "Every attempt that reached the frame", 24.0, theme::TEXT, Anchor::Start);
-    s.t(820.0, 232.0, "A long line to the right is a well-struck ball · star = goal · the rest were saved", 12.0, 400, theme::MUTED, Anchor::Start);
+    // the attempts that reached the frame, strongest strike first
     let mut on: Vec<(Side, usize, f64, f64, bool)> = vec![];
     for sd in Side::both() {
         for &q in &c.a.t(sd).shots {
@@ -286,13 +269,41 @@ pub fn chance_vs_finishing(c: &Ctx) -> Board {
     }
     on.sort_by(|a, b| b.3.partial_cmp(&a.3).unwrap());
     on.truncate(16);
-    let (dx0, dw) = (1000.0, 520.0);
+    let row_h = (560.0 / on.len().max(1) as f64).min(46.0);
+    let right_bottom = 275.0 + on.len() as f64 * row_h + 52.0;
+    // each chart is one card: the phone layout moves and scales a card as a whole, never its rows
+    panel(&mut s, 40.0, 176.0, 720.0, 660.0);
+    panel(&mut s, 800.0, 176.0, 760.0, right_bottom - 176.0);
+
+    s.h(64.0, 214.0, "From chance to goal", 24.0, theme::TEXT, Anchor::Start);
+    let mut lx = 64.0;
+    lx = legend_item(&mut s, lx, 252.0, "square", c.col(Side::Home), &c.name(Side::Home));
+    legend_item(&mut s, lx, 252.0, "square", c.col(Side::Away), &c.name(Side::Away));
+    let groups = [("Chances created", h.npxg, a.npxg), ("Reached the frame", h.xg_on_target, a.xg_on_target), ("Value once struck", h.xgot, a.xgot), ("Goals", (h.goals - h.sp_pen.goals) as f64, (a.goals - a.sp_pen.goals) as f64)];
+    let mx = groups.iter().map(|g| g.1.max(g.2)).fold(1.0, f64::max) * 1.15;
+    let (x0, w) = (250.0, 430.0);
+    for (i, (l, hv, av)) in groups.iter().enumerate() {
+        let y = 290.0 + i as f64 * 128.0;
+        s.t(x0 - 14.0, y + 42.0, l, 14.0, 500, theme::TEXT, Anchor::End);
+        s.rect(x0, y, hv / mx * w, 36.0, c.col(Side::Home), "");
+        s.t(x0 + hv / mx * w + 8.0, y + 24.0, &if i == 3 { format!("{hv:.0}") } else { format!("{hv:.2}") }, 14.0, 800, theme::TEXT, Anchor::Start);
+        s.rect(x0, y + 44.0, av / mx * w, 36.0, c.col(Side::Away), "");
+        s.t(x0 + av / mx * w + 8.0, y + 68.0, &if i == 3 { format!("{av:.0}") } else { format!("{av:.2}") }, 14.0, 800, theme::TEXT, Anchor::Start);
+    }
+
+    // dumbbells
+    s.h(824.0, 214.0, "Every attempt that reached the frame", 24.0, theme::TEXT, Anchor::Start);
+    s.t(824.0, 238.0, "A long line to the right is a well-struck ball · star = goal · the rest were saved", 12.0, 400, theme::MUTED, Anchor::Start);
+    let (dx0, dw) = (1040.0, 480.0);
     let dmax = on.iter().map(|o| o.2.max(o.3)).fold(0.3, f64::max).min(1.0);
-    let row_h = (720.0 / on.len().max(1) as f64).min(46.0);
     for (i, (sd, q, xg, ps, goal)) in on.iter().enumerate() {
         let y = 275.0 + i as f64 * row_h;
         let e = &c.m.events[*q];
-        s.t(dx0 - 12.0, y + 5.0, &format!("{} {}", c.pname(*sd, e.player), e.label_minute()), 13.0, 600, c.col(*sd), Anchor::End);
+        // names are plain text in the page colour; the team colour rides on a small dot beside them
+        let label = format!("{} {}", c.pname(*sd, e.player), e.label_minute());
+        let tw = text_w(&label, 13.0, false);
+        s.circle(dx0 - 12.0 - tw - 12.0, y, 3.5, c.col(*sd), "none", 0.0, "");
+        s.t(dx0 - 12.0, y + 5.0, &label, 13.0, 600, theme::TEXT, Anchor::End);
         let (a1, a2) = (dx0 + xg / dmax * dw, dx0 + ps / dmax * dw);
         s.tip = Some(format!("{} · chance {:.2} xG → struck {:.2} PSxG", shot_tip(c, e), xg, ps));
         s.line(a1, y, a2, y, c.col(*sd), 2.5, "");
@@ -308,10 +319,22 @@ pub fn chance_vs_finishing(c: &Ctx) -> Board {
         s.t(dx0 + v / dmax * dw, 275.0 + on.len() as f64 * row_h + 10.0, &format!("{v:.2}"), 11.0, 400, theme::MUTED, Anchor::Middle);
     }
     s.t(dx0 + dw / 2.0, 275.0 + on.len() as f64 * row_h + 32.0, "Chance (○) → value once struck (●)", 12.0, 500, theme::MUTED, Anchor::Middle);
+
+    // summary prose in the page colour, wrapped, a team-colour dot leading each sentence
     let verdict = |t: &TeamStats| if t.xgot >= t.xg_on_target { "struck them better than the chances were worth" } else { "struck them worse than the chances were worth" };
-    s.t(60.0, 940.0, &format!("{}: {:.2} xG created, {:.2} of it reached the frame, worth {:.2} once struck, {} scored · {}.", c.name(Side::Home), h.npxg, h.xg_on_target, h.xgot, h.goals, verdict(h)), 16.0, 600, c.col(Side::Home), Anchor::Start);
-    s.t(60.0, 970.0, &format!("{}: {:.2} xG created, {:.2} of it reached the frame, worth {:.2} once struck, {} scored · {}.", c.name(Side::Away), a.npxg, a.xg_on_target, a.xgot, a.goals, verdict(a)), 16.0, 600, c.col(Side::Away), Anchor::Start);
-    s.t(60.0, 1004.0, "Post-shot xG is a local placement estimate. It has no shot velocity and no goalkeeper position, so it prices where the ball went, not how hard it was to stop.", 12.0, 400, theme::GREY, Anchor::Start);
+    let mut y = right_bottom.max(836.0) + 48.0;
+    for (sd, t) in [(Side::Home, h), (Side::Away, a)] {
+        let line = format!("{}: {:.2} xG created, {:.2} of it reached the frame, worth {:.2} once struck, {} scored · {}.", c.name(sd), t.npxg, t.xg_on_target, t.xgot, t.goals, verdict(t));
+        for l in wrap_text(&line, 16.0, 1400.0) {
+            s.t(64.0, y, &l, 16.0, 600, theme::TEXT, Anchor::Start);
+            y += 24.0;
+        }
+        y += 8.0;
+    }
+    for l in wrap_text("Post-shot xG is a local placement estimate. It has no shot velocity and no goalkeeper position, so it prices where the ball went, not how hard it was to stop.", 12.0, 1400.0) {
+        s.t(64.0, y + 6.0, &l, 12.0, 400, theme::GREY, Anchor::Start);
+        y += 18.0;
+    }
     footer(&mut s, c, "Pre-shot xG prices the chance, post-shot xG prices the strike once its placement is known, and goals are what the keeper let through. Penalties excluded.");
     Board::new("24_chance_vs_finishing", "Chance quality against finishing", s)
 }
@@ -324,11 +347,12 @@ pub fn press_triggers(c: &Ctx) -> Board {
         let t = c.a.t(*sd);
         let col = c.col(*sd).to_string();
         let bx = 60.0 + k as f64 * 760.0;
+        panel(&mut s, bx - 20.0, 180.0, 700.0, 780.0);
         s.h(bx, 215.0, &c.name(*sd).to_uppercase(), 30.0, &col, Anchor::Start);
         let trig_n: usize = t.press_triggers.iter().map(|x| x.1).sum();
         s.t(bx, 242.0, &format!("{} of {} high regains followed an opponent action", trig_n, t.high_regains.len()), 13.0, 400, theme::MUTED, Anchor::Start);
         let mx = t.press_triggers.iter().map(|x| x.1).max().unwrap_or(1) as f64;
-        let (lx, w) = (bx + 140.0, 480.0);
+        let (lx, w) = (bx + 140.0, 460.0);
         if t.press_triggers.is_empty() {
             s.t(lx, 320.0, "none recorded", 14.0, 400, theme::MUTED, Anchor::Start);
         }
@@ -474,8 +498,9 @@ pub fn entry_routes(c: &Ctx) -> Board {
     for (k, sd) in Side::both().iter().enumerate() {
         let t = c.a.t(*sd);
         let bx = 60.0 + k as f64 * 770.0;
+        panel(&mut s, bx - 20.0, 180.0, 730.0, 670.0);
         s.h(bx + 340.0, 220.0, &c.name(*sd), 24.0, theme::TEXT, Anchor::Middle);
-        let (x0, w) = (bx + 90.0, 560.0);
+        let (x0, w) = (bx + 90.0, 520.0);
         for (i, (lane, lab)) in [(Lane::Left, "Left"), (Lane::Centre, "Centre"), (Lane::Right, "Right")].iter().enumerate() {
             let y = 300.0 + i as f64 * 160.0;
             let all = t.entries.iter().filter(|e| e.lane == *lane).count();

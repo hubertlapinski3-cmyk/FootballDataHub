@@ -63,6 +63,24 @@ fn col(s: &str, o: f32) -> Option<Color32> {
     Some(Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), (o.clamp(0.0, 1.0) * 255.0) as u8))
 }
 
+/// Boards sit on Darkroom: a saturated team colour that is too dark to read as text (crimson, navy) is
+/// blended toward the page colour until it clears a luminance floor. Near-neutral dark ink is left alone,
+/// because that is the label colour used on light fills.
+fn lift_dark_text(c: Color32) -> Color32 {
+    let chroma = c.r().max(c.g()).max(c.b()) as i32 - c.r().min(c.g()).min(c.b()) as i32;
+    if chroma < 40 || style::luminance(c) >= 0.22 {
+        return c;
+    }
+    let mut k = 0.0f32;
+    let mut out = c;
+    while k < 1.0 && style::luminance(out) < 0.22 {
+        k += 0.08;
+        let mix = |a: u8, b: u8| (a as f32 + (b as f32 - a as f32) * k).round() as u8;
+        out = Color32::from_rgba_unmultiplied(mix(c.r(), style::PRINT.r()), mix(c.g(), style::PRINT.g()), mix(c.b(), style::PRINT.b()), c.a());
+    }
+    out
+}
+
 /// Back-out easing (overshoots slightly, like a broadcast graphic settling).
 fn ease(t: f32) -> f32 {
     let t = t.clamp(0.0, 1.0) - 1.0;
@@ -271,7 +289,7 @@ pub fn paint(ui: &Ui, rect: Rect, sc: &Scene, o: &PaintOpts) {
                 let font = style::board_font(size, *hd, *w);
                 let mut job = LayoutJob::default();
                 for (txt, c) in runs {
-                    let cc = col(c, op * alpha).unwrap_or(WHITE);
+                    let cc = lift_dark_text(col(c, op * alpha).unwrap_or(WHITE));
                     job.append(txt, 0.0, egui::TextFormat { font_id: font.clone(), color: cc, ..Default::default() });
                 }
                 let g = painter.layout_job(job);

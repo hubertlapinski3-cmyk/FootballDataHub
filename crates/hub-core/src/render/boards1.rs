@@ -272,12 +272,14 @@ pub fn set_pieces(c: &Ctx) -> Board {
         let t = c.a.t(*sd);
         let col = c.col(*sd).to_string();
         let bx = 60.0 + k as f64 * 760.0;
+        // one card per team: the phone layout scales a card as a whole, never its rows
+        panel(&mut s, bx - 20.0, 190.0, 730.0, 880.0);
         s.h(bx, 225.0, &c.name(*sd).to_uppercase(), 30.0, &col, Anchor::Start);
         let tot = t.npxg.max(1e-9);
         let dead = (t.sp_corner.xg + t.sp_fk.xg) / tot;
         s.t(bx, 252.0, &format!("{:.0}% of xG came from a dead ball (corners and free kicks)", dead * 100.0), 13.0, 400, theme::MUTED, Anchor::Start);
         let rows = [("Open play", &t.sp_open), ("Corners", &t.sp_corner), ("Free kicks", &t.sp_fk), ("Penalties", &t.sp_pen)];
-        let (lx, cw) = (bx + 110.0, 560.0);
+        let (lx, cw) = (bx + 110.0, 440.0);
         for (i, (lab, b)) in rows.iter().enumerate() {
             if *lab == "Penalties" && b.n == 0 {
                 continue;
