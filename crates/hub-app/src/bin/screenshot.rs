@@ -189,6 +189,9 @@ fn main() {
     }
     let w: f32 = std::env::var("SHOT_W").ok().and_then(|v| v.parse().ok()).unwrap_or(412.0);
     let mut app = app;
+    if let Ok(t) = std::env::var("THEME") {
+        app.prefs.theme = t;
+    }
     if let Some(t) = std::env::var("TEXT_SCALE").ok().and_then(|v| v.parse().ok()) {
         app.prefs.text_scale = t;
     }

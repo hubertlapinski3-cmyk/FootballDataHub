@@ -43,8 +43,10 @@ fn col(s: &str, o: f32) -> Option<Color32> {
         return None;
     }
     // near-black board panels become violet glass on the app backdrop
+    // near-black board panels take the Darkroom card tone
     if matches!(s, "#0f0c15" | "#0e0b14" | "#0b0a12") {
-        return Some(Color32::from_rgba_unmultiplied(255, 255, 255, (o.clamp(0.0, 1.0) * 14.0) as u8));
+        let c = style::ROOM_CARD;
+        return Some(Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), (o.clamp(0.0, 1.0) * 255.0) as u8));
     }
     let c = style::hex(s);
     Some(Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), (o.clamp(0.0, 1.0) * 255.0) as u8))
@@ -138,8 +140,8 @@ pub fn paint(ui: &Ui, rect: Rect, sc: &Scene, o: &PaintOpts) {
     // board background (layer two visual language)
     let mut bg = Mesh::default();
     // translucent violet: the screen backdrop shows through, so boards sit on the same ground as the app
-    let top = Color32::from_rgba_unmultiplied(48, 30, 110, 70);
-    let bot = Color32::from_rgba_unmultiplied(12, 10, 30, 70);
+    let top = style::INK;
+    let bot = style::BOARD_BG2;
     bg.colored_vertex(rect.left_top(), top);
     bg.colored_vertex(rect.right_top(), top);
     bg.colored_vertex(rect.left_bottom(), bot);
@@ -251,7 +253,7 @@ pub fn paint(ui: &Ui, rect: Rect, sc: &Scene, o: &PaintOpts) {
                 if size < if o.thumb { 4.5 } else { 2.5 } {
                     continue;
                 }
-                let font = if *hd { head(size) } else if *w >= 700 { bold(size) } else if *w >= 600 { semi(size) } else { body(size) };
+                let font = style::board_font(size, *hd, *w);
                 let mut job = LayoutJob::default();
                 for (txt, c) in runs {
                     let cc = col(c, op * alpha).unwrap_or(WHITE);
@@ -296,7 +298,7 @@ pub fn paint(ui: &Ui, rect: Rect, sc: &Scene, o: &PaintOpts) {
         for lg in &sc.legend {
             if h.contains(&lg.layer) {
                 let rr = Rect::from_min_size(tp(lg.x, lg.y), Vec2::new(lg.w * s, lg.h * s));
-                painter.rect_filled(rr, 4.0, Color32::from_rgba_unmultiplied(11, 10, 18, 190));
+                painter.rect_filled(rr, 4.0, Color32::from_rgba_unmultiplied(11, 21, 16, 190));
                 painter.line_segment([rr.left_center(), rr.right_center()], Stroke::new(1.5, DARK_TEXT2));
             }
         }
@@ -396,16 +398,17 @@ pub fn tooltip(ui: &Ui, anchor: Pos2, text: &str, bounds: Rect) {
     let mut job = LayoutJob::simple(text.to_string(), body(13.0), WHITE, 250.0);
     job.wrap.max_width = 250.0;
     let g = painter.layout_job(job);
-    let size = g.size() + Vec2::new(24.0, 18.0);
+    let size = g.size() + Vec2::new(34.0, 18.0);
     let mut pos = Pos2::new(anchor.x - size.x / 2.0, anchor.y - size.y - 12.0);
     if pos.y < bounds.top() + 4.0 {
         pos.y = anchor.y + 22.0;
     }
     pos.x = pos.x.clamp(bounds.left() + 6.0, (bounds.right() - size.x - 6.0).max(bounds.left() + 6.0));
     let r = Rect::from_min_size(pos, size);
-    painter.rect_filled(r.translate(Vec2::new(0.0, 3.0)), 12.0, Color32::from_black_alpha(90));
-    painter.rect_filled(r, 12.0, Color32::from_rgba_unmultiplied(28, 22, 40, 240));
-    painter.rect_stroke(r, 12.0, Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 40)), egui::StrokeKind::Inside);
+    // darkroom tooltip: ink card, emerald indicator dot
+    painter.rect_filled(r, 12.0, style::SCRIM);
+    painter.rect_stroke(r, 12.0, Stroke::new(1.0, style::ROOM_LINE), egui::StrokeKind::Inside);
+    painter.circle_filled(egui::pos2(r.left() + 13.0, r.top() + 17.0), 4.0, style::FIXER);
     painter.circle_filled(anchor, 4.0, SECONDARY);
-    painter.galley(pos + Vec2::new(12.0, 9.0), g, WHITE);
+    painter.galley(pos + Vec2::new(24.0, 9.0), g, WHITE);
 }

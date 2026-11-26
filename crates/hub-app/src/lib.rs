@@ -315,9 +315,9 @@ impl App {
         if let Some((msg, until)) = self.toast.clone() {
             if ctx.input(|i| i.time) < until {
                 egui::Area::new(egui::Id::new("toast")).anchor(egui::Align2::CENTER_BOTTOM, [0.0, -32.0]).show(&ctx, |ui| {
-                    egui::Frame::new().fill(egui::Color32::from_rgb(0x21, 0x1d, 0x2b)).corner_radius(14).inner_margin(14).show(ui, |ui| {
+                    egui::Frame::new().fill(style::ROOM_CARD_HI).corner_radius(14).inner_margin(14).show(ui, |ui| {
                         ui.set_max_width(360.0);
-                        ui.label(egui::RichText::new(msg).color(egui::Color32::WHITE));
+                        ui.label(egui::RichText::new(msg).color(style::PRINT));
                     });
                 });
                 ctx.request_repaint_after(std::time::Duration::from_millis(250));

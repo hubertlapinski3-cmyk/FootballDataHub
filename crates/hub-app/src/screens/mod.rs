@@ -73,13 +73,13 @@ impl App {
                 crate::scene::paint(&tile, full, &sc, &crate::scene::PaintOpts { anim, hidden: None, selected: None, thumb, crests });
             }
             None => {
-                ui.painter().rect_filled(rect, 10.0, Color32::from_rgb(0x18, 0x13, 0x22));
+                ui.painter().rect_filled(rect, 10.0, ROOM_CARD);
                 ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, "Board unavailable: rebuild this match", body(12.0), DARK_TEXT2);
             }
         }
         // rounded mask corners
         let r = 10.0;
-        ui.painter().rect_stroke(rect, r, Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 26)), egui::StrokeKind::Inside);
+        ui.painter().rect_stroke(rect, r, Stroke::new(1.0, ROOM_LINE), egui::StrokeKind::Inside);
         press_overlay(ui, &resp, r, true);
         resp
     }
@@ -89,8 +89,7 @@ impl App {
     pub fn bottom_nav(&mut self, ui: &mut Ui, rect: egui::Rect, cur: &Screen, dark: bool) {
         let pill = egui::Rect::from_min_max(egui::pos2(rect.left() + 14.0, rect.top() + 8.0), egui::pos2(rect.right() - 14.0, rect.bottom() - 6.0));
         let p = ui.painter();
-        let (fill, line) = if dark { (Color32::from_rgba_unmultiplied(34, 26, 70, 235), Color32::from_rgba_unmultiplied(255, 255, 255, 36)) } else { (Color32::from_rgb(0xF4, 0xF0, 0xFC), Color32::from_rgb(0xDD, 0xD3, 0xF2)) };
-        p.rect_filled(pill.translate(Vec2::new(0.0, 3.0)), pill.height() / 2.0, Color32::from_black_alpha(if dark { 70 } else { 22 }));
+        let (fill, line) = if dark { (ROOM_CARD, ROOM_LINE) } else { (PRINT_CARD, PRINT_LINE) };
         p.rect_filled(pill, pill.height() / 2.0, fill);
         p.rect_stroke(pill, pill.height() / 2.0, Stroke::new(1.0, line), egui::StrokeKind::Inside);
         let items = [("Home", "home", Screen::Home), ("Matches", "list", Screen::Matches), ("Compare", "compare", Screen::Compare), ("Settings", "gear", Screen::Settings)];
@@ -106,11 +105,11 @@ impl App {
                 let d = 44.0;
                 let disc = egui::Rect::from_center_size(egui::pos2(r.center().x, cy), Vec2::splat(d));
                 ui.painter().circle_filled(disc.center(), d / 2.0, PRIMARY);
-                ui.painter().circle_stroke(disc.center(), d / 2.0, Stroke::new(1.0, Color32::from_rgba_unmultiplied(255, 255, 255, 60)));
+                ui.painter().circle_stroke(disc.center(), d / 2.0, Stroke::new(1.0, SAGE));
             }
             let ir = egui::Rect::from_center_size(egui::pos2(r.center().x, cy), Vec2::splat(22.0));
             crate::screens::browse::draw_icon_col(ui, ir, icon, c);
-            ui.painter().text(egui::pos2(r.center().x, r.bottom() - 10.0), egui::Align2::CENTER_CENTER, *label, egui::FontId::new(if rect.width() < 360.0 { 10.0 } else { 11.0 }, if active { egui::FontFamily::Name("semibold".into()) } else { egui::FontFamily::Proportional }), if active { if dark { WHITE } else { PRIMARY } } else { idle });
+            ui.painter().text(egui::pos2(r.center().x, r.bottom() - 10.0), egui::Align2::CENTER_CENTER, *label, egui::FontId::new(if rect.width() < 360.0 { 10.0 } else { 11.0 }, if active { egui::FontFamily::Name("semibold".into()) } else { egui::FontFamily::Proportional }), if active { if dark { PRINT } else { FOREST } } else { idle });
             if resp.is_pointer_button_down_on() {
                 ui.painter().circle_filled(egui::pos2(r.center().x, cy), 24.0, Color32::from_rgba_unmultiplied(255, 255, 255, 22));
             }
@@ -179,7 +178,7 @@ impl App {
         let s = &self.lib.entries[m].s;
         let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), h), Sense::hover());
         let p = ui.painter();
-        p.rect_filled(rect, 10.0, Color32::from_rgb(0x10, 0x1a, 0x1f));
+        p.rect_filled(rect, 10.0, ROOM_CARD);
         let n = s.momentum[0].len().max(2);
         let mx = s.momentum[0].iter().chain(&s.momentum[1]).cloned().fold(0.01f32, f32::max);
         let mid = rect.center().y;
@@ -193,7 +192,7 @@ impl App {
             p.add(egui::Shape::convex_polygon(vec![], Color32::TRANSPARENT, Stroke::NONE));
             p.add(egui::Shape::line(pts, Stroke::new(2.0, col)));
         }
-        p.line_segment([egui::pos2(rect.left() + 6.0, mid), egui::pos2(rect.right() - 6.0, mid)], Stroke::new(1.0, Color32::from_gray(80)));
+        p.line_segment([egui::pos2(rect.left() + 6.0, mid), egui::pos2(rect.right() - 6.0, mid)], Stroke::new(1.0, ROOM_LINE));
         for (side, minute, _) in &s.goals {
             let i = (*minute as usize).min(n - 1);
             let c = hex(&s.colours[*side]);

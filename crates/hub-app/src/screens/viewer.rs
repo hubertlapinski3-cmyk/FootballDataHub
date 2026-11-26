@@ -172,7 +172,7 @@ impl App {
                 }
             }
             None => {
-                child.painter().rect_filled(rect, 8.0, Color32::from_rgb(0x15, 0x10, 0x1e));
+                child.painter().rect_filled(rect, 8.0, ROOM_CARD);
                 child.painter().text(rect.center(), egui::Align2::CENTER_CENTER, "Board data missing: rebuild this match", body(13.0), DARK_TEXT2);
             }
         }
@@ -186,8 +186,8 @@ impl App {
         let p = self.lib.entries[m].dir.join("boards").join(format!("{board}.manifest.json"));
         let v: serde_json::Value = std::fs::read_to_string(p).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or_default();
         let sheet = Rect::from_min_max(egui::pos2(full.left(), full.top() + full.height() * 0.35), full.max);
-        ui.painter().rect_filled(sheet, egui::CornerRadius { nw: 22, ne: 22, sw: 0, se: 0 }, Color32::from_rgb(0x1c, 0x16, 0x28));
-        ui.painter().line_segment([sheet.left_top() + Vec2::new(sheet.width() / 2.0 - 24.0, 10.0), sheet.left_top() + Vec2::new(sheet.width() / 2.0 + 24.0, 10.0)], Stroke::new(4.0, Color32::from_gray(90)));
+        ui.painter().rect_filled(sheet, egui::CornerRadius { nw: 22, ne: 22, sw: 0, se: 0 }, ROOM_CARD_HI);
+        ui.painter().line_segment([sheet.left_top() + Vec2::new(sheet.width() / 2.0 - 24.0, 10.0), sheet.left_top() + Vec2::new(sheet.width() / 2.0 + 24.0, 10.0)], Stroke::new(4.0, ROOM_LINE));
         let mut su = ui.new_child(egui::UiBuilder::new().max_rect(sheet.shrink(16.0)));
         su.add_space(12.0);
         su.horizontal(|ui| {

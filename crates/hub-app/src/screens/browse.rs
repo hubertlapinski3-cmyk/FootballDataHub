@@ -10,7 +10,7 @@ impl App {
     // ------------------------------------------------------------------ 1 onboarding
     pub fn onboarding(&mut self, ui: &mut Ui) {
         let rect = ui.max_rect();
-        gradient(ui, rect, PRIMARY_VARIANT, Color32::from_rgb(0x07, 0x06, 0x0c));
+        backdrop(ui, rect);
         // build the bundled sample in the background so the preview shows a real board
         if self.lib.entries.is_empty() && !self.build.lock().unwrap().running && self.build.lock().unwrap().step.is_empty() {
             self.open_on_done = false;
@@ -26,7 +26,7 @@ impl App {
                 ui.label(RichText::new("31 analysis boards and a written report from one WhoScored match").font(body(15.0)).color(DARK_TEXT2));
             });
             ui.add_space(20.0);
-            egui::Frame::new().fill(BOARD_BG).corner_radius(18).inner_margin(10).stroke(Stroke::new(1.0, Color32::from_rgb(0x4a, 0x2a, 0x9a))).show(ui, |ui| {
+            egui::Frame::new().fill(BOARD_BG).corner_radius(18).inner_margin(10).stroke(Stroke::new(1.0, ROOM_LINE)).show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 let w = ui.available_width();
                 let h = w * 1130.0 / 1600.0;
@@ -36,7 +36,7 @@ impl App {
                     }
                     None => {
                         let (r, _) = ui.allocate_exact_size(Vec2::new(w, h), Sense::hover());
-                        ui.painter().rect_filled(r, 10.0, Color32::from_rgb(0x15, 0x10, 0x1e));
+                        ui.painter().rect_filled(r, 10.0, ROOM_CARD);
                         let st = self.build.lock().unwrap().clone();
                         ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, format!("Preparing a sample board… {}", st.step), body(13.0), DARK_TEXT2);
                     }
@@ -106,7 +106,7 @@ impl App {
                     let offline = ["dns", "connect", "timed out", "network", "bot wall", "403", "unreachable"].iter().any(|k| lower.contains(k));
                     card(lt()).show(ui, |ui| {
                         ui.set_width(ui.available_width());
-                        ui.label(RichText::new(if offline { "Could not reach the source (offline or blocked)" } else { "Build failed" }).font(bold(14.0)).color(if lt() { Color32::from_rgb(0xff, 0x6b, 0x81) } else { ERROR }));
+                        ui.label(RichText::new(if offline { "Could not reach the source (offline or blocked)" } else { "Build failed" }).font(bold(14.0)).color(if lt() { ERROR_ROOM } else { ERROR_PRINT }));
                         ui.label(RichText::new(msg.chars().take(220).collect::<String>()).font(body(12.0)).color(sub()));
                         ui.horizontal(|ui| {
                             if ghost(ui, "Retry", lt()) && !running && !inp.trim().is_empty() {
@@ -296,8 +296,17 @@ impl App {
                 let tw = (w - 12.0) / 2.0;
                 let mut open_board: Option<String> = None;
                 let mut tile_i = 0usize;
+                let mut sec_no = 0u32;
                 for (sec, boards) in boards_by_section(&e) {
-                    section_title(ui, &sec, true);
+                    sec_no += 1;
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new(&sec).font(semi(15.0)).color(DARK_TEXT2));
+                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                            // editorial index marker
+                            ui.label(RichText::new(format!("No. {sec_no:02}")).font(body(12.0)).color(SAGE));
+                        });
+                    });
                     let label = |b: &library::BoardMeta| {
                         let team = if b.id.contains("_home") { Some(&e.s.home_short) } else if b.id.contains("_away") { Some(&e.s.away_short) } else { None };
                         let half = if b.id.ends_with("_h1") { " · 1st half" } else if b.id.ends_with("_h2") { " · 2nd half" } else { "" };
@@ -528,7 +537,7 @@ impl App {
                 });
                 if !self.compare.ran {
                     ui.add_space(6.0);
-                    egui::Frame::new().fill(Color32::from_rgb(0x0d, 0x2b, 0x2a)).corner_radius(24).inner_margin(6).show(ui, |ui| {
+                    egui::Frame::new().fill(ROOM_CARD_HI).corner_radius(24).inner_margin(6).show(ui, |ui| {
                         ui.spacing_mut().slider_width = ui.available_width() - 20.0;
                         ui.visuals_mut().selection.bg_fill = SECONDARY_VARIANT;
                         ui.add(egui::Slider::new(&mut self.compare.swipe, 0.0..=1.0).show_value(false).trailing_fill(true));
@@ -697,14 +706,14 @@ impl App {
                 card(lt()).show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     ui.horizontal(|ui| {
-                        for (k, label) in [("dark", "Violet"), ("light", "Light")] {
+                        for (k, label) in [("dark", "Darkroom"), ("light", "Print")] {
                             if chip(ui, label, self.prefs.theme == k || (k == "dark" && self.prefs.theme != "light"), lt()) {
                                 self.prefs.theme = k.to_string();
                                 self.save_prefs();
                             }
                         }
                     });
-                    ui.label(RichText::new("Violet is the dark violet look on every screen. Light uses white for Home, Matches, Report and Settings.").font(body(12.0)).color(sub()));
+                    ui.label(RichText::new("Darkroom is the dark forest look. Print is warm paper for Home, Matches, Report and Settings; boards always stay in Darkroom.").font(body(12.0)).color(sub()));
                     ui.label(RichText::new("Per screen (overrides the choice above)").font(semi(13.0)).color(fg()));
                     for (key, name) in [("home", "Home"), ("matches", "Matches"), ("report", "Report"), ("settings", "Settings")] {
                         ui.horizontal(|ui| {
@@ -802,7 +811,7 @@ pub fn rich_paragraph(ui: &mut Ui, text: &str, home: &str, away: &str, hc: Color
     use egui::text::{LayoutJob, TextFormat};
     let mut job = LayoutJob::default();
     job.wrap.max_width = ui.available_width();
-    let base = TextFormat { font_id: body(size), color: Color32::from_rgb(0x1a, 0x1a, 0x1a), line_height: Some(size * 1.5), ..Default::default() };
+    let base = TextFormat { font_id: body(size), color: INK, line_height: Some(size * 1.5), ..Default::default() };
     let mut rest = text;
     while !rest.is_empty() {
         let hit = [(home, hc), (away, ac)].iter().filter(|(n, _)| !n.is_empty()).filter_map(|(n, c)| rest.find(*n).map(|i| (i, *n, *c))).min_by_key(|x| x.0);
