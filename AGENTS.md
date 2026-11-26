@@ -74,8 +74,9 @@ these and never bundles raw matches.
 3. The app caches both files under `<data>/catalog/`, refreshes them in the background when older than 6 hours,
    and downloads one packet when a match is opened (`Source::Packet`), then builds its boards offline.
    `library::set_scout` hands the index to every build: player cards rank against the season role pool.
-4. `scripts/leagues.json` holds the tournament pages. The last two entries are marked `verify`: check the
-   WhoScored URLs once before the first run. Discovery and fetching have not been run against the live site.
+4. `scripts/leagues.json` holds the tournament pages (region, tournament and, where known, season and stage ids).
+   The slugs must stay those of `League::slug` (`pro-league`, not `belgian-pro-league`): they name the raw and
+   packet folders. Discovery and fetching have not been run against the live site from this sandbox.
 5. Test fixture: `crates/hub-core/tests/fixtures/scout/` (synthetic clubs and players, one real packet). Regenerate
    with `cargo test -p hub-core --test scout regenerate_fixture -- --ignored` after changing `METRICS`.
 

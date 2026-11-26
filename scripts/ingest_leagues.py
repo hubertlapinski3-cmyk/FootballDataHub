@@ -78,6 +78,13 @@ def selftest() -> int:
     assert is_finished({"elapsed": "FT"}) and is_finished({}) and not is_finished({"elapsed": "67"})
     cfg = json.loads((HERE / "leagues.json").read_text())
     assert len(cfg["leagues"]) == 7 and len({l["slug"] for l in cfg["leagues"]}) == 7
+    for l in cfg["leagues"]:
+        assert "verify" not in l, f"{l['slug']} is still unverified"
+        m = re.search(r"(?i)/regions/(\d+)/tournaments/(\d+)", l["url"])
+        assert m and (int(m.group(1)), int(m.group(2))) == (l["region_id"], l["tournament_id"]), l["slug"]
+        assert l["url"].startswith("https://www.whoscored.com/"), l["slug"]
+        if "stage_id" in l:
+            assert f"/stages/{l['stage_id']}/" in l["url"] and f"/seasons/{l['season_id']}/" in l["url"], l["slug"]
     print("selftest ok")
     return 0
 
@@ -88,7 +95,7 @@ def discover(page, league: dict, backfill: bool, season_start: datetime.date) ->
     html = page.content()
     ids = match_ids_from_html(html)
     if backfill:
-        stage = stage_id_from_html(html)
+        stage = league.get("stage_id") or stage_id_from_html(html)
         if not stage:
             print(f"  {league['slug']}: no stage id on the tournament page; backfill limited to the page's recent results", file=sys.stderr)
         else:

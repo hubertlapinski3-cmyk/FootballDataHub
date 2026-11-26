@@ -1,12 +1,12 @@
 {
   "season": "2026-27",
   "leagues": [
-    {"slug": "premier-league", "name": "Premier League",     "url": "https://www.whoscored.com/regions/252/tournaments/2/england-premier-league"},
-    {"slug": "la-liga",        "name": "La Liga",            "url": "https://www.whoscored.com/regions/206/tournaments/4/spain-laliga"},
-    {"slug": "bundesliga",     "name": "Bundesliga",         "url": "https://www.whoscored.com/regions/81/tournaments/3/germany-bundesliga"},
-    {"slug": "serie-a",        "name": "Serie A",            "url": "https://www.whoscored.com/regions/108/tournaments/5/italy-serie-a"},
-    {"slug": "ligue-1",        "name": "Ligue 1",            "url": "https://www.whoscored.com/regions/74/tournaments/22/france-ligue-1"},
-    {"slug": "pro-league",     "name": "Belgian Pro League", "url": "https://www.whoscored.com/regions/22/tournaments/18/belgium-jupiler-pro-league", "verify": true},
-    {"slug": "ekstraklasa",    "name": "Ekstraklasa",        "url": "https://www.whoscored.com/regions/176/tournaments/52/poland-ekstraklasa", "verify": true}
+    {"slug": "premier-league", "name": "Premier League", "url": "https://www.whoscored.com/regions/252/tournaments/2/england-premier-league", "region_id": 252, "tournament_id": 2},
+    {"slug": "la-liga", "name": "La Liga", "url": "https://www.whoscored.com/regions/206/tournaments/4/spain-laliga", "region_id": 206, "tournament_id": 4},
+    {"slug": "bundesliga", "name": "Bundesliga", "url": "https://www.whoscored.com/regions/81/tournaments/3/germany-bundesliga", "region_id": 81, "tournament_id": 3},
+    {"slug": "serie-a", "name": "Serie A", "url": "https://www.whoscored.com/regions/108/tournaments/5/italy-serie-a", "region_id": 108, "tournament_id": 5},
+    {"slug": "ligue-1", "name": "Ligue 1", "url": "https://www.whoscored.com/regions/74/tournaments/22/france-ligue-1", "region_id": 74, "tournament_id": 22},
+    {"slug": "pro-league", "name": "Belgian Pro League", "url": "https://www.whoscored.com/regions/22/tournaments/18/seasons/11160/stages/25564/show/belgium-jupiler-pro-league-2026-2027", "region_id": 22, "tournament_id": 18, "season_id": 11160, "stage_id": 25564},
+    {"slug": "ekstraklasa", "name": "Ekstraklasa", "url": "https://www.whoscored.com/Regions/176/Tournaments/76/Polonia-Ekstraklasa", "region_id": 176, "tournament_id": 76}
   ]
 }

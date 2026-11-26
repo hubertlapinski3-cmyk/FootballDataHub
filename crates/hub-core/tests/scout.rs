@@ -336,3 +336,16 @@ fn season_card_is_role_specific_and_purely_offensive_for_forwards() {
     let gk = text(ScoutRole::GK);
     assert!(gk.contains("Saves") && gk.contains("Claims"));
 }
+
+#[test]
+fn league_config_matches_the_league_slugs_the_ingest_reads() {
+    let cfg: serde_json::Value = serde_json::from_slice(&std::fs::read(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../scripts/leagues.json")).unwrap()).expect("leagues.json parses");
+    let slugs: Vec<&str> = cfg["leagues"].as_array().unwrap().iter().map(|l| l["slug"].as_str().unwrap()).collect();
+    let want: Vec<&str> = League::ALL.iter().map(|l| l.slug()).collect();
+    assert_eq!(slugs, want, "raw/<slug>/ folders must be the slugs League::from_slug knows");
+    assert!(cfg["leagues"].as_array().unwrap().iter().all(|l| l.get("verify").is_none() && l["url"].as_str().unwrap().contains("whoscored.com")));
+    let pl = &cfg["leagues"][5];
+    assert_eq!((pl["region_id"].as_u64(), pl["tournament_id"].as_u64(), pl["season_id"].as_u64(), pl["stage_id"].as_u64()), (Some(22), Some(18), Some(11160), Some(25564)));
+    let ek = &cfg["leagues"][6];
+    assert_eq!((ek["region_id"].as_u64(), ek["tournament_id"].as_u64()), (Some(176), Some(76)));
+}
