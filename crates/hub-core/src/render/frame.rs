@@ -77,7 +77,7 @@ pub fn crest(s: &mut Svg, cx: f64, cy: f64, r: f64, data: &Option<String>, name:
 
 pub fn header(s: &mut Svg, c: &Ctx, title: &str, subtitle: &str, scope: Scope) {
     let w = s.w;
-    s.rrect(18.0, 14.0, w - 36.0, 120.0, 10.0, "#0e0b14", "#2a2633", 1.0);
+    s.rrect(18.0, 14.0, w - 36.0, 120.0, 10.0, "#12211A", "#24382D", 1.0);
     // headline auto-shrink to fit left area
     let right_w = 520.0;
     let max_w = w - 36.0 - right_w - 30.0;
@@ -115,6 +115,7 @@ pub fn header(s: &mut Svg, c: &Ctx, title: &str, subtitle: &str, scope: Scope) {
 
 pub fn footer(s: &mut Svg, _c: &Ctx, how: &str) {
     s.how = how.to_string();
+    s.scene.footer_start = s.scene.prims.len();
     let h = s.h;
     // wrap the how-to-read sentence at ~170 chars
     let mut lines = vec![];
@@ -134,12 +135,12 @@ pub fn footer(s: &mut Svg, _c: &Ctx, how: &str) {
     }
     let n = lines.len() as f64;
     for (i, l) in lines.iter().enumerate() {
-        s.t(36.0, h - 24.0 - (n - 1.0 - i as f64) * 18.0, l, 13.0, 400, "#cfcdd8", Anchor::Start);
+        s.t(36.0, h - 24.0 - (n - 1.0 - i as f64) * 18.0, l, 13.0, 400, "#F5F3EE", Anchor::Start);
     }
 }
 
 pub fn panel(s: &mut Svg, x: f64, y: f64, w: f64, h: f64) {
-    s.rrect(x, y, w, h, 8.0, "#0f0c15", "#2a2633", 1.0);
+    s.rrect(x, y, w, h, 8.0, "#12211A", "#24382D", 1.0);
 }
 
 pub fn legend_item(s: &mut Svg, x: f64, y: f64, kind: &str, col: &str, label: &str) -> f64 {

@@ -40,12 +40,10 @@ impl App {
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     let fill_zoom = (canvas_h_hint(full.height()) / (full.width() * (meta.height / meta.width) as f32)).clamp(1.0, 3.0);
                     if (meta.height / meta.width) < 1.1 && ui.add(egui::Button::new(RichText::new(if self.viewer.zoom > 1.01 { "Fit" } else { "Fill" }).font(semi(14.0)).color(PRIMARY_ON_DARK)).fill(Color32::TRANSPARENT).min_size(Vec2::splat(48.0))).clicked() {
-                        if self.viewer.zoom > 1.01 {
-                            self.viewer.zoom = 1.0;
-                        } else {
-                            self.viewer.zoom = fill_zoom;
-                        }
-                        self.viewer.pan = Vec2::ZERO;
+                        // ease to the new zoom (see the animation step below) instead of snapping
+                        self.viewer.target_zoom = Some(if self.viewer.zoom > 1.01 { 1.0 } else { fill_zoom });
+                        self.viewer.target_pan = Vec2::ZERO;
+                        self.viewer.pan_vel = Vec2::ZERO;
                     }
                     let icon_btn = |ui: &mut Ui, kind: &str, id: &str| -> bool {
                         let (r, resp) = ui.allocate_exact_size(Vec2::splat(48.0), Sense::click());
@@ -84,6 +82,9 @@ impl App {
                             self.viewer.zoom = 1.0;
                             self.viewer.pan = Vec2::ZERO;
                             self.viewer.at_top = true;
+                            self.viewer.target_zoom = None;
+                            self.viewer.pan_vel = Vec2::ZERO;
+                            self.viewer.scrubbing = false;
                         }
                     }
                 });
@@ -96,7 +97,10 @@ impl App {
         let aspect = (meta.height / meta.width) as f32;
         // portrait boards fit the width and scroll; landscape boards fit whole
         let fit_w = if aspect > 1.1 { canvas.width() } else { canvas.width().min(canvas.height() / aspect) };
-        // pinch / ctrl-scroll zoom, drag to pan, double tap to fit
+        let dt = ui.input(|i| i.stable_dt).clamp(0.001, 0.05);
+        let ctx = ui.ctx().clone();
+        let fits_whole = aspect <= 1.1;
+        // pinch / ctrl-scroll zoom: direct manipulation, cancels any easing
         let (zoom_delta, multi) = ui.input(|i| (i.zoom_delta(), i.multi_touch()));
         if resp.hovered() || multi.is_some() {
             let z = (self.viewer.zoom * zoom_delta).clamp(1.0, 5.0);
@@ -107,18 +111,70 @@ impl App {
                     self.viewer.pan += (p - c) * (1.0 - k);
                 }
                 self.viewer.zoom = z;
+                self.viewer.target_zoom = None;
+                self.viewer.pan_vel = Vec2::ZERO;
             }
         }
-        if resp.dragged() {
-            self.viewer.pan += resp.drag_delta();
-        }
+        // double tap: ease in at the tapped point, or back out
         if resp.double_clicked() {
             if self.viewer.zoom > 1.01 {
-                self.viewer.zoom = 1.0;
-                self.viewer.pan = Vec2::ZERO;
-            } else {
-                self.viewer.zoom = 2.5;
+                self.viewer.target_zoom = Some(1.0);
+                self.viewer.target_pan = if fits_whole { Vec2::ZERO } else { Vec2::new(0.0, self.viewer.pan.y) };
+            } else if let Some(p) = resp.interact_pointer_pos() {
+                let k = 2.5 / self.viewer.zoom;
+                self.viewer.target_zoom = Some(2.5);
+                self.viewer.target_pan = self.viewer.pan + (p - (canvas.center() + self.viewer.pan)) * (1.0 - k);
             }
+            self.viewer.pan_vel = Vec2::ZERO;
+        }
+        // press tracking: a finger held still for 0.3 s on the board starts scrubbing
+        let down = resp.is_pointer_button_down_on();
+        let pointer = ui.input(|i| i.pointer.interact_pos());
+        if down {
+            let now = self.now;
+            if self.viewer.press_t0.is_none() {
+                self.viewer.press_t0 = Some(now);
+                self.viewer.press_pos = pointer.unwrap_or(canvas.center());
+            } else if !self.viewer.scrubbing && !resp.dragged() && now - self.viewer.press_t0.unwrap_or(now) > 0.3 && pointer.map(|p| (p - self.viewer.press_pos).length() < 10.0).unwrap_or(false) {
+                self.viewer.scrubbing = true;
+            }
+            ctx.request_repaint_after(std::time::Duration::from_millis(60));
+        }
+        let was_scrubbing = self.viewer.scrubbing;
+        if !down {
+            self.viewer.press_t0 = None;
+            self.viewer.scrubbing = false;
+        }
+        // a board that fits whole at 1x has nothing to pan: dragging scrubs the tooltip instead
+        let scrub_mode = self.viewer.scrubbing || (fits_whole && self.viewer.zoom <= 1.01 && self.viewer.target_zoom.is_none() && down);
+        let mut animating = false;
+        if scrub_mode {
+            self.viewer.pan_vel = Vec2::ZERO;
+        } else if resp.dragged() {
+            let d = resp.drag_delta();
+            self.viewer.pan += d;
+            self.viewer.pan_vel = self.viewer.pan_vel * 0.5 + d / dt * 0.5;
+            self.viewer.target_zoom = None;
+        } else if self.viewer.pan_vel.length() > 1.0 {
+            // inertial fling: exponential decay after release
+            self.viewer.pan += self.viewer.pan_vel * dt;
+            self.viewer.pan_vel *= 0.88_f32.powf(dt * 60.0);
+            animating = true;
+        } else {
+            self.viewer.pan_vel = Vec2::ZERO;
+        }
+        // eased zoom toward its target
+        if let Some(tz) = self.viewer.target_zoom {
+            let k = 1.0 - 0.001_f32.powf(dt);
+            self.viewer.zoom += (tz - self.viewer.zoom) * k;
+            let (tp, p) = (self.viewer.target_pan, self.viewer.pan);
+            self.viewer.pan += (tp - p) * k;
+            if (tz - self.viewer.zoom).abs() < 0.004 && (self.viewer.target_pan - self.viewer.pan).length() < 0.5 {
+                self.viewer.zoom = tz;
+                self.viewer.pan = self.viewer.target_pan;
+                self.viewer.target_zoom = None;
+            }
+            animating = true;
         }
         let size = Vec2::new(fit_w, fit_w * aspect) * self.viewer.zoom;
         // keep the board on screen
@@ -127,7 +183,17 @@ impl App {
             self.viewer.pan = Vec2::new(0.0, max_pan.y);
             self.viewer.at_top = false;
         }
+        let before = self.viewer.pan;
         self.viewer.pan = self.viewer.pan.clamp(-max_pan, max_pan);
+        if self.viewer.pan.x != before.x {
+            self.viewer.pan_vel.x = 0.0;
+        }
+        if self.viewer.pan.y != before.y {
+            self.viewer.pan_vel.y = 0.0;
+        }
+        if animating {
+            ctx.request_repaint();
+        }
         let mut centre = canvas.center() + self.viewer.pan;
         if size.y < canvas.height() {
             // short board on a tall phone: sit just under the chrome instead of floating mid-screen
@@ -143,7 +209,15 @@ impl App {
             Some(sc) => {
                 let anim = if self.prefs.reduced_motion { None } else { Some((self.now - self.viewer.opened_at) as f32) };
                 crate::scene::paint(&child, rect, sc, &crate::scene::PaintOpts { anim, hidden: Some(&self.viewer.hidden), selected: self.viewer.selected.map(|s| s.0), thumb: false, crests });
-                if resp.clicked() {
+                // live scrubbing: the tooltip follows the finger across marks
+                if scrub_mode && down {
+                    if let Some(pos) = pointer {
+                        if let crate::scene::Hit::Mark(i, t) = crate::scene::hit(rect, sc, pos, &self.viewer.hidden) {
+                            self.viewer.selected = Some((i, t));
+                        }
+                    }
+                }
+                if resp.clicked() && !was_scrubbing {
                     if let Some(pos) = resp.interact_pointer_pos() {
                         match crate::scene::hit(rect, sc, pos, &self.viewer.hidden) {
                             crate::scene::Hit::Legend(l) => {
@@ -153,7 +227,9 @@ impl App {
                                 self.viewer.selected = None;
                             }
                             crate::scene::Hit::Mark(i, t) => {
-                                self.viewer.selected = if self.viewer.selected.map(|s| s.0) == Some(i) { None } else { Some((i, t)) };
+                                // on whole-fit boards the press already selected it: a tap must not toggle it off
+                                let toggle = !(fits_whole && self.viewer.zoom <= 1.01);
+                                self.viewer.selected = if toggle && self.viewer.selected.map(|s| s.0) == Some(i) { None } else { Some((i, t)) };
                             }
                             crate::scene::Hit::None => self.viewer.selected = None,
                         }

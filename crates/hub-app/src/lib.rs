@@ -90,11 +90,20 @@ pub struct ViewerState {
     pub opened_at: f64,
     /// start a freshly opened tall board at its top edge
     pub at_top: bool,
+    /// fling velocity in points per second, decayed each frame after release
+    pub pan_vel: egui::Vec2,
+    /// animated zoom: the view eases toward these instead of snapping
+    pub target_zoom: Option<f32>,
+    pub target_pan: egui::Vec2,
+    /// finger held on a mark: drag scrubs the tooltip across marks instead of panning
+    pub scrubbing: bool,
+    pub press_t0: Option<f64>,
+    pub press_pos: egui::Pos2,
 }
 
 impl ViewerState {
     pub fn fresh(now: f64) -> ViewerState {
-        ViewerState { zoom: 1.0, pan: egui::Vec2::ZERO, show_manifest: false, show_export: false, hidden: Default::default(), selected: None, opened_at: now, at_top: true }
+        ViewerState { zoom: 1.0, pan: egui::Vec2::ZERO, show_manifest: false, show_export: false, hidden: Default::default(), selected: None, opened_at: now, at_top: true, pan_vel: egui::Vec2::ZERO, target_zoom: None, target_pan: egui::Vec2::ZERO, scrubbing: false, press_t0: None, press_pos: egui::Pos2::ZERO }
     }
 }
 

@@ -318,54 +318,41 @@ impl App {
                     ui.label(RichText::new(format!("Note: {} source fallback(s): {}", e.s.fallbacks.len(), e.s.fallbacks[0])).font(body(12.0)).color(DARK_TEXT2));
                 }
                 let w = ui.available_width();
-                let tw = (w - 12.0) / 2.0;
+                // two cards per row; one per row on compact widths or large text so titles stay readable
+                let cols = if w / (text_scale_pct() as f32 / 100.0) >= 300.0 { 2usize } else { 1 };
+                let tw = (w - 12.0 * (cols as f32 - 1.0)) / cols as f32;
                 let mut open_board: Option<String> = None;
                 let mut tile_i = 0usize;
                 let mut sec_no = 0u32;
                 for (sec, boards) in boards_by_section(&e) {
                     sec_no += 1;
                     ui.add_space(8.0);
-                    ui.horizontal(|ui| {
+                    ui.horizontal_wrapped(|ui| {
                         ui.label(RichText::new(&sec).font(semi(15.0)).color(DARK_TEXT2));
-                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            // editorial index marker
-                            ui.label(RichText::new(format!("No. {sec_no:02}")).font(body(12.0)).color(SAGE));
-                        });
+                        // editorial index marker
+                        ui.label(RichText::new(format!("No. {sec_no:02}")).font(body(12.0)).color(SAGE));
                     });
-                    let label = |b: &library::BoardMeta| {
-                        let team = if b.id.contains("_home") { Some(&e.s.home_short) } else if b.id.contains("_away") { Some(&e.s.away_short) } else { None };
-                        let half = if b.id.ends_with("_h1") { " · 1st half" } else if b.id.ends_with("_h2") { " · 2nd half" } else { "" };
-                        match team { Some(t) => format!("{} · {}{}", b.title, t, half), None => b.title.clone() }
-                    };
+                    // titles stay plain: the card badge carries the team, half and scope
+                    let label = |b: &library::BoardMeta| b.title.clone();
                     let mut items: Vec<(String, String)> = boards.iter().map(|b| (b.id.clone(), label(b))).collect();
                     if sec == "Players" {
                         items.push(("__players".into(), "Player cards".into()));
                     }
-                    for row in items.chunks(2) {
+                    for row in items.chunks(cols) {
                         let a = self.stagger(tile_i);
-                        tile_i += 2;
+                        tile_i += cols;
                         ui.horizontal_top(|ui| {
                             ui.set_opacity(a);
-                            ui.add_space((1.0 - a) * 0.0);
                             for (id, title) in row {
-                                let r = ui.allocate_ui(Vec2::new(tw, 10.0), |ui| {
-                                    ui.vertical(|ui| {
-                                        let th = tw * 1130.0 / 1600.0;
-                                        if id == "__players" {
-                                            let (r, _) = ui.allocate_exact_size(Vec2::new(tw, th), Sense::hover());
-                                            ui.painter().rect_filled(r, 14.0, PRIMARY);
-                                            ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, format!("{} players →", e.s.players.len()), head(22.0), WHITE);
-                                        } else {
-                                            let _ = th;
-                                            if self.draw_board(ui, m, id, tw, true, false).clicked() {
-                                                open_board = Some(id.clone());
-                                            }
-                                        }
-                                        ui.label(RichText::new(title).font(semi(13.0)).color(WHITE));
-                                    });
-                                });
-                                if id == "__players" && r.response.interact(Sense::click()).clicked() {
-                                    self.push(Screen::Players(m));
+                                if id == "__players" {
+                                    if self.players_card(ui, m, tw, e.s.players.len()).clicked() {
+                                        self.push(Screen::Players(m));
+                                    }
+                                } else {
+                                    let badge = board_badge(&e, id);
+                                    if self.board_card(ui, m, id, tw, title, &badge).clicked() {
+                                        open_board = Some(id.clone());
+                                    }
                                 }
                             }
                         });
@@ -954,6 +941,25 @@ pub fn draw_icon_col(ui: &Ui, r: egui::Rect, kind: &str, colr: Color32) {
             }
             p.circle_stroke(c, 7.5, st);
             p.circle_filled(c, 2.5, colr);
+        }
+    }
+}
+
+/// One-line scope / metric badge for a hub card: who and what the board covers.
+fn board_badge(e: &library::Entry, id: &str) -> String {
+    let s = &e.s;
+    let f = |v: Option<f64>| v.map(|x| format!("{x:.1}")).unwrap_or("–".into());
+    match id {
+        "01_xg_flow" => format!("npxG {:.2}–{:.2}", s.npxg[0], s.npxg[1]),
+        "03_win_odds" => format!("xPts {:.1}–{:.1}", s.xpts[0], s.xpts[1]),
+        "14_ppda_timeline" => format!("PPDA {}–{}", f(s.ppda[0]), f(s.ppda[1])),
+        _ => {
+            let team = if id.contains("_home") { Some(&s.home_short) } else if id.contains("_away") { Some(&s.away_short) } else { None };
+            let half = if id.ends_with("_h1") { " · 1st half" } else if id.ends_with("_h2") { " · 2nd half" } else { "" };
+            match team {
+                Some(t) => format!("{t}{half}"),
+                None => "Full match · both teams".to_string(),
+            }
         }
     }
 }

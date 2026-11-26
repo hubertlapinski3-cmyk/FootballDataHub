@@ -119,6 +119,77 @@ impl App {
         }
     }
 
+    /// Hub card for one board: tonal Darkroom card, a top-cropped live preview (no illegible small print),
+    /// the board title and a one-line scope badge. Tap opens the viewer.
+    pub fn board_card(&mut self, ui: &mut Ui, m: usize, board: &str, width: f32, title: &str, badge: &str) -> egui::Response {
+        let preview_h = width * 0.66;
+        let card_h = preview_h + 12.0 + card_text_h();
+        let (rect, resp) = ui.allocate_exact_size(Vec2::new(width, card_h), Sense::click());
+        ui.painter().rect_filled(rect, 20.0, ROOM_CARD);
+        let inner = egui::Rect::from_min_size(rect.min + Vec2::splat(8.0), Vec2::new(width - 16.0, preview_h));
+        let sc = self.scenes.get(&self.scene_path(m, board));
+        match sc {
+            Some(sc) => {
+                let crests = self.crest_ids(ui.ctx(), m);
+                // start the crop below the intro (headline, subtitle, divider) so the data fills the preview
+                let skip = sc.prims.iter().find_map(|p| match p {
+                    matchhub::render::svg::Prim::R { y, h, .. } if (*h - 3.0).abs() < 0.01 => Some(*y + 18.0),
+                    _ => None,
+                }).unwrap_or(0.0);
+                let scale = inner.width() / sc.w;
+                let full = egui::Rect::from_min_size(egui::pos2(inner.left(), inner.top() - skip * scale), Vec2::new(inner.width(), sc.h * scale));
+                let mut tile = ui.new_child(egui::UiBuilder::new().max_rect(inner));
+                tile.set_clip_rect(inner.intersect(ui.clip_rect()));
+                // preview crop is rounded by painting a card-coloured frame over its corners
+                crate::scene::paint(&tile, full, &sc, &crate::scene::PaintOpts { anim: None, hidden: None, selected: None, thumb: true, crests });
+                ui.painter().rect_stroke(inner, 14.0, Stroke::new(1.0, ROOM_LINE), egui::StrokeKind::Inside);
+            }
+            None => {
+                ui.painter().rect_filled(inner, 14.0, ROOM_CARD_HI);
+                ui.painter().text(inner.center(), egui::Align2::CENTER_CENTER, "Rebuild this match", body(12.0), DARK_TEXT2);
+            }
+        }
+        let tx = rect.left() + 14.0;
+        let maxw = width - 28.0;
+        // both lines stay on one line each: a longer text ends in an ellipsis
+        let title_g = one_line(ui, title, semi(14.0), PRINT, maxw);
+        let badge_g = one_line(ui, badge, body(12.0), SAGE, maxw);
+        ui.painter().galley(egui::pos2(tx, inner.bottom() + 10.0), title_g, PRINT);
+        ui.painter().galley(egui::pos2(tx, rect.bottom() - 10.0 - badge_g.size().y), badge_g, SAGE);
+        press_overlay(ui, &resp, 20.0, true);
+        resp
+    }
+
+    /// The "Player cards" entry in the Players section: same card shape, halftone motif instead of a preview.
+    pub fn players_card(&mut self, ui: &mut Ui, _m: usize, width: f32, n: usize) -> egui::Response {
+        let preview_h = width * 0.66;
+        let card_h = preview_h + 12.0 + card_text_h();
+        let (rect, resp) = ui.allocate_exact_size(Vec2::new(width, card_h), Sense::click());
+        ui.painter().rect_filled(rect, 20.0, ROOM_CARD);
+        let inner = egui::Rect::from_min_size(rect.min + Vec2::splat(8.0), Vec2::new(width - 16.0, preview_h));
+        ui.painter().rect_filled(inner, 14.0, ROOM_CARD_HI);
+        let p = ui.painter().with_clip_rect(inner);
+        let c = inner.center();
+        let step = 9.0;
+        for iy in -8..=8 {
+            for ix in -10..=10 {
+                let x = ix as f32 * step + if iy % 2 == 0 { 0.0 } else { step / 2.0 };
+                let y = iy as f32 * step * 0.87;
+                let d = ((x * x + y * y).sqrt() / 70.0).min(1.0);
+                let r = (1.0 - d) * step * 0.42;
+                if r > 0.5 {
+                    p.circle_filled(egui::pos2(c.x + x, c.y + y), r, Color32::from_rgba_unmultiplied(FIXER.r(), FIXER.g(), FIXER.b(), ((1.0 - d) * 200.0) as u8));
+                }
+            }
+        }
+        p.text(c, egui::Align2::CENTER_CENTER, n.to_string(), head(34.0), PRINT);
+        let tx = rect.left() + 14.0;
+        ui.painter().text(egui::pos2(tx, inner.bottom() + 10.0), egui::Align2::LEFT_TOP, "Player cards", semi(14.0), PRINT);
+        ui.painter().text(egui::pos2(tx, rect.bottom() - 10.0), egui::Align2::LEFT_BOTTOM, "Every player in the match", body(12.0), SAGE);
+        press_overlay(ui, &resp, 20.0, true);
+        resp
+    }
+
     /// "Paste" pill (48dp) for link and token fields. Returns the clipboard text when tapped.
     /// On desktop the text fields already take Ctrl+V, so the pill only explains that.
     pub fn paste_pill(&mut self, ui: &mut Ui) -> Option<String> {
@@ -292,6 +363,28 @@ impl App {
         }
         clicked
     }
+}
+
+/// Height of the title + badge block under a hub card preview; grows with the text size.
+fn card_text_h() -> f32 {
+    (14.0 + 12.0) * text_scale_pct() as f32 / 100.0 * 1.35 + 28.0
+}
+
+/// A galley that is never wider than `max_w`: the text is cut with an ellipsis instead of wrapping.
+fn one_line(ui: &Ui, text: &str, font: egui::FontId, col: Color32, max_w: f32) -> std::sync::Arc<egui::Galley> {
+    let whole = ui.painter().layout_no_wrap(text.to_string(), font.clone(), col);
+    if whole.size().x <= max_w {
+        return whole;
+    }
+    let chars: Vec<char> = text.chars().collect();
+    for n in (1..chars.len()).rev() {
+        let cut: String = chars[..n].iter().collect::<String>().trim_end().to_string() + "…";
+        let g = ui.painter().layout_no_wrap(cut, font.clone(), col);
+        if g.size().x <= max_w {
+            return g;
+        }
+    }
+    ui.painter().layout_no_wrap("…".to_string(), font, col)
 }
 
 /// What the progress card says: fetching, parsing, ..., saved.

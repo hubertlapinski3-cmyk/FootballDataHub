@@ -6,14 +6,14 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 
-pub const BG: &str = "#0b0a12";
-pub const BG2: &str = "#140c18";
-pub const PANEL: &str = "#100d17";
-pub const LINE: &str = "#2a2633";
-pub const TEXT: &str = "#f2f2f5";
-pub const MUTED: &str = "#a7a5b2";
-pub const GREY: &str = "#6b6878";
-pub const PITCH_LINE: &str = "#e8e8ee";
+pub const BG: &str = "#0B1510";
+pub const BG2: &str = "#0F1C15";
+pub const PANEL: &str = "#12211A";
+pub const LINE: &str = "#24382D";
+pub const TEXT: &str = "#F5F3EE";
+pub const MUTED: &str = "#A3B3AA";
+pub const GREY: &str = "#A3B3AA";
+pub const PITCH_LINE: &str = "#F5F3EE";
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Rgb(pub f64, pub f64, pub f64);
@@ -184,7 +184,7 @@ impl MatchTheme {
     }
     /// Sequential scale from background to the team colour (t in 0..1).
     pub fn seq(&self, s: Side, t: f64) -> String {
-        Rgb::hex("#120d16").unwrap().mix(Rgb::hex(self.c(s)).unwrap(), t.clamp(0.0, 1.0)).to_hex()
+        Rgb::hex("#12211A").unwrap().mix(Rgb::hex(self.c(s)).unwrap(), t.clamp(0.0, 1.0)).to_hex()
     }
     /// Diverging scale: -1 away .. 0 near-black .. +1 home.
     pub fn div(&self, v: f64) -> String {
@@ -234,7 +234,7 @@ const SEMANTIC: [(&str, &str, &str); 11] = [
     ("through", "#f97316", "#f472b6"),
     ("touch", "#38bdf8", "#a78bfa"),
     ("defending", "#ec4899", "#fb923c"),
-    ("blocked", "#b8b6c2", "#9ca3af"),
+    ("blocked", "#A3B3AA", "#9ca3af"),
 ];
 
 const FALLBACK_SET: [&str; 4] = ["#fde100", "#22d3ee", "#f5f5f5", "#84cc16"];

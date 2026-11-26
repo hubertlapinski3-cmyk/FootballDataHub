@@ -13,7 +13,7 @@ const PAD: f32 = 20.0;
 const TEXT_BOOST: f32 = 1.3;
 /// Smallest type on a portrait board, in board px (about 11 dp on a phone).
 const MIN_TEXT: f32 = 14.0;
-const PANEL_FILL: &str = "#0f0c15";
+const PANEL_FILL: &str = "#12211A";
 const GAP: f32 = 22.0;
 
 type Box4 = (f32, f32, f32, f32);
@@ -58,9 +58,6 @@ fn union(a: Box4, b: Box4) -> Box4 {
     (a.0.min(b.0), a.1.min(b.1), a.2.max(b.2), a.3.max(b.3))
 }
 
-fn bbox(ps: &[&Prim]) -> Option<Box4> {
-    ps.iter().map(|p| bbox1(p)).reduce(union)
-}
 
 /// Affine map p' = ((p - o) * s) + t with independent x / y scale; strokes and type use the x scale.
 fn xf(p: &Prim, ox: f32, oy: f32, sx: f32, sy: f32, tx: f32, ty: f32) -> Prim {
@@ -122,11 +119,9 @@ fn boost(mut p: Prim, k: f32) -> Prim {
     p
 }
 
-fn is_footer(p: &Prim) -> bool {
-    match p {
-        Prim::T { runs, sz, .. } => runs.iter().any(|r| (r.1 == "#cfcdd8" && *sz == 13.0) || (r.1 == crate::theme::GREY && *sz == 11.0)),
-        _ => false,
-    }
+/// The footer block (how-to-read lines) starts at `Scene::footer_start`; the viewer shows that text in its Info sheet.
+fn is_footer(sc: &Scene, i: usize) -> bool {
+    sc.footer_start > 0 && i >= sc.footer_start
 }
 
 // ---------------------------------------------------------------- XY-cut
@@ -317,10 +312,9 @@ pub fn reflow(sc: &Scene) -> Option<Scene> {
     }
     let mut head_frame: Vec<&Prim> = vec![];
     let mut head_left: Vec<&Prim> = vec![];
-    let mut head_right: Vec<&Prim> = vec![];
     let mut body: Vec<usize> = vec![];
     for (i, p) in sc.prims.iter().enumerate() {
-        if is_footer(p) {
+        if is_footer(sc, i) {
             continue;
         }
         let (ax, ay) = anchor(p);
@@ -329,8 +323,6 @@ pub fn reflow(sc: &Scene) -> Option<Scene> {
                 head_frame.push(p);
             } else if ax < 1040.0 {
                 head_left.push(p);
-            } else {
-                head_right.push(p);
             }
         } else {
             body.push(i);
@@ -351,9 +343,14 @@ pub fn reflow(sc: &Scene) -> Option<Scene> {
             _ => {}
         }
     }
-    let mut y = 40.0;
-    if let Some(runs) = &headline {
-        let size = 34.0f32;
+    let mut y = 18.0;
+    let informative = headline.as_ref().map(|r| {
+        let txt: String = r.iter().map(|x| x.0.as_str()).collect();
+        txt.split_whitespace().count() >= 5 || txt.chars().any(|c| c.is_ascii_digit())
+    }).unwrap_or(false);
+    if let (true, Some(runs)) = (informative, &headline) {
+        let size = 30.0f32;
+        y += size;
         let per_line = ((PW - 48.0) / (size * 0.47)) as usize;
         let mut words: Vec<(String, String)> = vec![];
         for (t, c) in runs {
@@ -391,29 +388,16 @@ pub fn reflow(sc: &Scene) -> Option<Scene> {
         prims.push(Prim::T { x: 24.0, y: y + size, runs: vec![(line, col.clone())], sz: size, w: 400, hd: false, a: 0, o: 1.0, l: -1 });
         y += size + 6.0;
     }
-    // teams / score cluster, centred (right cluster spans about x 1070..1540 on the landscape canvas)
-    let row_y = y + 34.0;
-    let rb = bbox(&head_right);
-    let cx = rb.map(|b| (b.0 + b.2) / 2.0).unwrap_or(1305.0);
-    for p in &head_right {
-        if matches!(p, Prim::T { runs, .. } if runs.iter().any(|r| r.0 == "FULL MATCH" || r.0.starts_with("TEAM VIEW") || r.0.starts_with("PLAYER VIEW"))) {
-            continue; // the period selector already says it
-        }
-        let q = xf(p, 0.0, 0.0, 1.0, 1.0, PW / 2.0 - cx, row_y - 52.0);
-        prims.push(match q {
-            Prim::T { sz, .. } if sz < 12.0 => boost(q, 1.2),
-            other => other,
-        });
-    }
-    let head_h = row_y + 44.0;
+    // The viewer's own top bar carries the board title and controls, so the poster chrome is gone:
+    // no header box, no crests / score cluster. A thin team-colour divider closes the intro.
+    y += 6.0;
+    let head_h = y;
+    let half = (PW - 40.0) / 2.0;
     for p in &head_frame {
-        if let Prim::R { x, h, f, s, sw, o, t, l, r, .. } = p {
-            if *h > 30.0 {
-                prims.insert(0, Prim::R { x: 12.0, y: 12.0, w: PW - 24.0, h: head_h - 12.0, r: *r, f: f.clone(), s: s.clone(), sw: *sw, o: *o, t: *t, l: *l });
-            } else {
-                let half = (PW - 24.0) / 2.0;
+        if let Prim::R { x, h, f, s, sw, o, t, l, .. } = p {
+            if *h <= 30.0 {
                 let left_half = *x < 400.0;
-                prims.push(Prim::R { x: if left_half { 12.0 } else { 12.0 + half }, y: head_h + 2.0, w: half, h: *h, r: 0.0, f: f.clone(), s: s.clone(), sw: *sw, o: *o, t: *t, l: *l });
+                prims.push(Prim::R { x: if left_half { 20.0 } else { 20.0 + half }, y: head_h, w: half, h: 3.0, r: 0.0, f: f.clone(), s: s.clone(), sw: *sw, o: *o, t: *t, l: *l });
             }
         }
     }
@@ -422,7 +406,7 @@ pub fn reflow(sc: &Scene) -> Option<Scene> {
     let items: Vec<(usize, Box4)> = body.iter().map(|&i| (i, bbox1(&sc.prims[i]))).collect();
     let root = cut(&items, true, 0);
     let mut placed = Placed { prims: vec![], maps: vec![] };
-    let body_h = place(&root, sc, head_h + 40.0, &mut placed);
+    let body_h = place(&root, sc, head_h + 30.0, &mut placed);
     prims.extend(placed.prims);
 
     // ---- legend hit areas follow their block
@@ -433,5 +417,5 @@ pub fn reflow(sc: &Scene) -> Option<Scene> {
             legend.push(LegendHit { layer: h.layer, x: (h.x - ox) * sx + tx, y: (h.y - oy) * sy + ty, w: h.w * sx, h: h.h * sy });
         }
     }
-    Some(Scene { w: PW, h: head_h + 40.0 + body_h + 36.0, prims, tips: sc.tips.clone(), layers: sc.layers.clone(), legend })
+    Some(Scene { w: PW, h: head_h + 30.0 + body_h + 36.0, prims, tips: sc.tips.clone(), layers: sc.layers.clone(), legend, footer_start: 0 })
 }

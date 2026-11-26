@@ -124,7 +124,7 @@ pub fn high_regains(c: &Ctx, sd: Side) -> Board {
         }.to_string());
         s.tip = Some(format!("{} {} · {:?}{}{}", c.pname(e.side, e.player), e.label_minute(), e.kind, r.trigger.map(|t| format!(" after {t}")).unwrap_or_default(), if r.xg > 0.0 { format!(" · {:.2} xG followed", r.xg) } else { String::new() }));
         match r.outcome {
-            RegainOutcome::Nothing => s.circle(x, y, 6.0, "#8d8b98", "none", 0.0, ""),
+            RegainOutcome::Nothing => s.circle(x, y, 6.0, "#A3B3AA", "none", 0.0, ""),
             RegainOutcome::Box => s.square(x, y, 7.0, &col, "none", 0.0),
             RegainOutcome::Shot => {
                 s.star(x, y, 11.0, "#ffffff", "none");
@@ -134,7 +134,7 @@ pub fn high_regains(c: &Ctx, sd: Side) -> Board {
     }
     s.layer = None;
     let mut lx = 80.0;
-    lx = legend_item(&mut s, lx, 1020.0, "circle", "#8d8b98", &format!("Nothing followed ({nothing})"));
+    lx = legend_item(&mut s, lx, 1020.0, "circle", "#A3B3AA", &format!("Nothing followed ({nothing})"));
     lx = legend_item(&mut s, lx, 1020.0, "square", &col, &format!("Reached the box ({boxn})"));
     legend_item(&mut s, lx, 1020.0, "star", "#ffffff", &format!("Led to a shot ({shots})"));
     let (px0, py0) = (940.0, 210.0);
@@ -190,7 +190,7 @@ pub fn high_turnovers(c: &Ctx) -> Board {
                         s.triangle(sx, sy, 6.0, "#ffffff", "none", 0.0);
                     }
                 }
-                None => s.circle(x, y, 5.0, "#6b6878", "none", 0.0, ""),
+                None => s.circle(x, y, 5.0, "#A3B3AA", "none", 0.0, ""),
             }
         }
         for &q in &t.opp_errors_forced {
@@ -219,8 +219,8 @@ pub fn high_turnovers(c: &Ctx) -> Board {
         }
     }
     let mut lx = 200.0;
-    lx = legend_item(&mut s, lx, 1010.0, "circle", "#cfcdd8", "Turnover → shot (team colour)");
-    lx = legend_item(&mut s, lx, 1010.0, "circle", "#6b6878", "Turnover without shot");
+    lx = legend_item(&mut s, lx, 1010.0, "circle", "#F5F3EE", "Turnover → shot (team colour)");
+    lx = legend_item(&mut s, lx, 1010.0, "circle", "#A3B3AA", "Turnover without shot");
     lx = legend_item(&mut s, lx, 1010.0, "triangle", "#ffffff", "Resulting shot");
     lx = legend_item(&mut s, lx, 1010.0, "star", &c.th.semantic.goal, "Resulting goal");
     legend_item(&mut s, lx, 1010.0, "cross", "#facc15", "Opponent error forced");
@@ -377,7 +377,7 @@ pub fn game_state(c: &Ctx) -> Board {
     let rows = &c.a.states;
     let total: f64 = rows.iter().map(|r| r.minutes).sum::<f64>().max(1.0);
     let (bx, by, bw) = (60.0, 200.0, W - 120.0);
-    let cols = ["#6b6878".to_string(), c.col(Side::Home).to_string(), c.col(Side::Away).to_string()];
+    let cols = ["#A3B3AA".to_string(), c.col(Side::Home).to_string(), c.col(Side::Away).to_string()];
     let mut x = bx;
     for (i, r) in rows.iter().enumerate() {
         let w = r.minutes / total * bw;
@@ -405,7 +405,7 @@ pub fn game_state(c: &Ctx) -> Board {
     for (k, (i, r)) in played.iter().enumerate() {
         let cx = 60.0 + k as f64 * (cw + 40.0);
         let cy = 360.0;
-        s.rrect(cx, cy, cw, 560.0, 8.0, "#0f0c15", &cols[*i], 2.0);
+        s.rrect(cx, cy, cw, 560.0, 8.0, "#12211A", &cols[*i], 2.0);
         s.h(cx + 28.0, cy + 50.0, &r.label, 28.0, theme::TEXT, Anchor::Start);
         s.h(cx + cw - 28.0, cy + 50.0, &format!("{:.1} min", r.minutes), 24.0, theme::TEXT, Anchor::End);
         s.t(cx + cw - 220.0, cy + 110.0, &c.name(Side::Home).to_uppercase(), 12.0, 800, c.col(Side::Home), Anchor::Middle);
@@ -565,7 +565,7 @@ pub fn transitions(c: &Ctx) -> Board {
         for v in agg.values() {
             let (a1, b1) = p.p(v.0 / v.4, v.1 / v.4);
             let (a2, b2) = p.p(v.2 / v.4, v.3 / v.4);
-            s.arrow(a1, b1, a2, b2, "#8d8b98", 2.0 + v.4.sqrt() * 1.5, 12.0, r#"opacity="0.8""#);
+            s.arrow(a1, b1, a2, b2, "#A3B3AA", 2.0 + v.4.sqrt() * 1.5, 12.0, r#"opacity="0.8""#);
         }
         for tr in t.transitions.iter().filter(|t| t.shot) {
             let (a1, b1) = p.p(tr.start.0, tr.start.1);
@@ -591,8 +591,8 @@ pub fn transitions(c: &Ctx) -> Board {
         s.t(px0 + 20.0, py0 + 530.0, &format!("Chance rate: {:.1}%", chances as f64 / t.transitions.len().max(1) as f64 * 100.0), 13.0, 700, theme::TEXT, Anchor::Start);
     }
     let mut lx = 200.0;
-    lx = legend_item(&mut s, lx, 1040.0, "line", "#8d8b98", "Average transition without a shot, by zone");
-    lx = legend_item(&mut s, lx, 1040.0, "line", "#cfcdd8", "Created a chance (side's colour)");
+    lx = legend_item(&mut s, lx, 1040.0, "line", "#A3B3AA", "Average transition without a shot, by zone");
+    lx = legend_item(&mut s, lx, 1040.0, "line", "#F5F3EE", "Created a chance (side's colour)");
     legend_item(&mut s, lx, 1040.0, "line", "#ffffff", "Ended in a goal");
     footer(&mut s, c, "Definition: open-play regain where, within 12 s, the ball progresses ≥ 20 m, reaches the final third or the box, or produces a shot. Restarts excluded. Arrow = start → most advanced point.");
     Board::new("19_transitions", "Transition map", s)
@@ -665,7 +665,7 @@ pub fn match_stats(c: &Ctx) -> Board {
     ];
     let table = |s: &mut Svg, x: f64, y: f64, title: &str, rows: &[(&str, String, String, f64, f64)], border: &str| {
         let hgt = 70.0 + rows.len() as f64 * 34.0;
-        s.rrect(x, y, 700.0, hgt, 6.0, "#0f0c15", border, 1.5);
+        s.rrect(x, y, 700.0, hgt, 6.0, "#12211A", border, 1.5);
         s.t(x + 20.0, y + 30.0, title, 13.0, 800, theme::TEXT, Anchor::Start);
         s.t(x + 20.0, y + 56.0, &c.name(Side::Home), 12.0, 800, c.col(Side::Home), Anchor::Start);
         s.t(x + 680.0, y + 56.0, &c.name(Side::Away), 12.0, 800, c.col(Side::Away), Anchor::End);

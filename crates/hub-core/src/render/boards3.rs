@@ -24,7 +24,7 @@ pub fn xt_heatmap(c: &Ctx, sd: Side) -> Board {
     let top = all.get(((all.len() as f64) * 0.95) as usize).copied().unwrap_or(0.05).max(0.01);
     // the grid is the visual: no pitch markings, cells with thin dark gutters, values in white
     let p = Pitch::up(80.0, 200.0, 760.0, 780.0, 0.0);
-    s.rect(p.x0 - 2.0, p.y0 - 2.0, p.w + 4.0, p.h + 4.0, "#29202a", "");
+    s.rect(p.x0 - 2.0, p.y0 - 2.0, p.w + 4.0, p.h + 4.0, "#24382D", "");
     for row in 0..12 {
         for col in 0..8 {
             let v = t.xt_grid[row * 8 + col];
@@ -33,7 +33,7 @@ pub fn xt_heatmap(c: &Ctx, sd: Side) -> Board {
             let (ax, ay) = p.p(x0, y0);
             let (bx, by) = p.p(x0 + 105.0 / 12.0, y0 + 8.5);
             let (rx, ry, rw, rh) = (ax.min(bx) + 1.0, ay.min(by) + 1.0, (bx - ax).abs() - 2.0, (by - ay).abs() - 2.0);
-            let fill = if v > 0.0 { c.th.seq(sd, v / top) } else { "#151220".to_string() };
+            let fill = if v > 0.0 { c.th.seq(sd, v / top) } else { "#12211A".to_string() };
             if v > 0.0 {
                 s.tip = Some(format!("xT added from this square: {v:.3}"));
             }
@@ -90,11 +90,11 @@ pub fn gk_frames(c: &Ctx) -> Board {
         let (gx0, gy0, gw, gh) = (bx + 40.0, 270.0, 660.0, 320.0);
         let pu = |u: f64| gx0 + (1.8 - u) / 3.6 * gw; // viewed from behind shooter: u>0 (left post) on the left
         let pz = |z: f64| gy0 + gh - z / 1.9 * gh;
-        s.line(gx0, pz(0.0), gx0 + gw, pz(0.0), "#cfcdd8", 2.0, "");
-        s.rect(pu(1.0), pz(1.0), pu(-1.0) - pu(1.0), pz(0.0) - pz(1.0), "#1a1422", "");
+        s.line(gx0, pz(0.0), gx0 + gw, pz(0.0), "#F5F3EE", 2.0, "");
+        s.rect(pu(1.0), pz(1.0), pu(-1.0) - pu(1.0), pz(0.0) - pz(1.0), "#1A2E24", "");
         for i in 1..8 {
             let x = pu(1.0) + (pu(-1.0) - pu(1.0)) * i as f64 / 8.0;
-            s.line(x, pz(1.0), x, pz(0.0), "#2b2433", 1.0, "");
+            s.line(x, pz(1.0), x, pz(0.0), "#24382D", 1.0, "");
         }
         s.polyline(&[(pu(1.0), pz(0.0)), (pu(1.0), pz(1.0)), (pu(-1.0), pz(1.0)), (pu(-1.0), pz(0.0))], "#ffffff", 5.0, "");
         for &q in &g.shots_faced {
@@ -146,7 +146,7 @@ pub fn gk_frames(c: &Ctx) -> Board {
         let tw = 700.0 / 7.0;
         for (i, (l, v)) in tiles.iter().enumerate() {
             let x = bx + i as f64 * tw;
-            s.rrect(x + 4.0, 640.0, tw - 8.0, 110.0, 6.0, "#0f0c15", "#2a2633", 1.0);
+            s.rrect(x + 4.0, 640.0, tw - 8.0, 110.0, 6.0, "#12211A", "#24382D", 1.0);
             s.h(x + tw / 2.0, 700.0, v, 34.0, theme::TEXT, Anchor::Middle);
             s.t(x + tw / 2.0, 732.0, l, 10.5, 700, theme::MUTED, Anchor::Middle);
         }
@@ -204,7 +204,7 @@ pub fn height_length(c: &Ctx) -> Board {
         let mut allv: Vec<f64> = smoothed.iter().flatten().filter_map(|x| *x).collect();
         allv.sort_by(|a, b| a.partial_cmp(b).unwrap());
         if let Some(med) = allv.get(allv.len() / 2) {
-            s.line(x0, py(*med), x0 + w, py(*med), "#9a98a6", 1.0, r#"stroke-dasharray="3 4""#);
+            s.line(x0, py(*med), x0 + w, py(*med), "#A3B3AA", 1.0, r#"stroke-dasharray="3 4""#);
             s.t(x0 + w + 6.0, py(*med) + 16.0, &format!("match median {:.0}", med), 11.0, 500, theme::MUTED, Anchor::Start);
         }
         // shaded band between the two lines, coloured by the higher side
@@ -284,7 +284,7 @@ pub fn chance_vs_finishing(c: &Ctx) -> Board {
         let (a1, a2) = (dx0 + xg / dmax * dw, dx0 + ps / dmax * dw);
         s.tip = Some(format!("{} · chance {:.2} xG → struck {:.2} PSxG", shot_tip(c, e), xg, ps));
         s.line(a1, y, a2, y, c.col(*sd), 2.5, "");
-        s.circle(a1, y, 6.0, "#0b0a12", c.col(*sd), 2.0, "");
+        s.circle(a1, y, 6.0, "#0B1510", c.col(*sd), 2.0, "");
         if *goal {
             s.star(a2, y, 10.0, "#ffffff", "none");
         } else {
@@ -371,8 +371,8 @@ pub fn progression_scatter(c: &Ctx) -> Board {
         v.get(v.len() / 2).copied().unwrap_or(0.0)
     };
     let (mx, my) = (med(&xs), med(&ys));
-    s.line(px(mx), y0, px(mx), y0 + h, "#9a98a6", 1.0, r#"stroke-dasharray="3 4""#);
-    s.line(x0, py(my), x0 + w, py(my), "#9a98a6", 1.0, r#"stroke-dasharray="3 4""#);
+    s.line(px(mx), y0, px(mx), y0 + h, "#A3B3AA", 1.0, r#"stroke-dasharray="3 4""#);
+    s.line(x0, py(my), x0 + w, py(my), "#A3B3AA", 1.0, r#"stroke-dasharray="3 4""#);
     s.t(x0 + w / 2.0, y0 + h + 48.0, "Progressive passes + explicit carries", 14.0, 600, theme::TEXT, Anchor::Middle);
     s.t(x0 - 70.0, y0 + h / 2.0, "Inferred xA", 14.0, 600, theme::TEXT, Anchor::Middle);
     // simple label repel: shift labels vertically when overlapping
@@ -425,7 +425,7 @@ pub fn funnel(c: &Ctx) -> Board {
             s.t(x0 + 24.0, ry + 20.0, &c.name(*sd).to_uppercase(), 14.0, 700, c.col(*sd), Anchor::Start);
             s.h(x0 + 200.0, ry + 23.0, &f[i].to_string(), 28.0, theme::TEXT, Anchor::End);
             s.tip = Some(format!("{} · {}: {} of {} possessions", c.name(*sd), l, f[i], f[0]));
-            s.rect(bar_x, ry + 4.0, bar_w, 22.0, "#1c1826", "");
+            s.rect(bar_x, ry + 4.0, bar_w, 22.0, "#1A2E24", "");
             s.rect(bar_x, ry + 4.0, w, 22.0, c.col(*sd), "");
         }
         if i > 0 {
@@ -462,8 +462,8 @@ pub fn entry_routes(c: &Ctx) -> Board {
             let all = t.entries.iter().filter(|e| e.lane == *lane).count();
             let sh = t.entries.iter().filter(|e| e.lane == *lane && e.shot_followed).count();
             s.t(x0 - 14.0, y + 5.0, lab, 14.0, 500, theme::TEXT, Anchor::End);
-            s.line(x0, y, x0 + all as f64 / mx * w, y, "#8d8b98", 4.0, "");
-            s.circle(x0 + all as f64 / mx * w, y, 9.0, "#cfcdd8", "none", 0.0, "");
+            s.line(x0, y, x0 + all as f64 / mx * w, y, "#A3B3AA", 4.0, "");
+            s.circle(x0 + all as f64 / mx * w, y, 9.0, "#F5F3EE", "none", 0.0, "");
             s.tip = Some(format!("{} · {} lane: {} entries, {} followed by a shot", c.name(*sd), lab, all, sh));
             s.square(x0 + sh as f64 / mx * w, y, 8.0, c.col(*sd), "none", 0.0);
             s.t(x0 + sh as f64 / mx * w, y - 18.0, &format!("{} shot{} · {:.0}%", sh, if sh == 1 { "" } else { "s" }, if all > 0 { sh as f64 / all as f64 * 100.0 } else { 0.0 }), 13.0, 600, theme::TEXT, Anchor::Middle);
@@ -473,7 +473,7 @@ pub fn entry_routes(c: &Ctx) -> Board {
             s.t(x0 + g as f64 / mx * w, 760.0, &g.to_string(), 12.0, 400, theme::MUTED, Anchor::Middle);
         }
         s.t(x0 + w / 2.0, 784.0, "Entries and entries followed by a shot", 12.0, 500, theme::MUTED, Anchor::Middle);
-        legend_item(&mut s, bx + 480.0, 260.0, "circle", "#cfcdd8", "All entries");
+        legend_item(&mut s, bx + 480.0, 260.0, "circle", "#F5F3EE", "All entries");
         legend_item(&mut s, bx + 480.0, 282.0, "square", c.col(*sd), "Shot followed");
         if t.crosses.1 > 0 {
             s.t(bx + 90.0, 812.0, &format!("Crosses: {} of {} found a teammate", t.crosses.0, t.crosses.1), 12.0, 400, theme::GREY, Anchor::Start);
@@ -517,7 +517,7 @@ fn context_scatter(c: &Ctx, rows: &[TeamMatchRow], id: &str, title: &str, sub: &
             Some(sd) => later.push((px(xs[i]), py(ys[i]), sd, r.match_id == c.m.id)),
             None => {
                 s.tip = Some(format!("{} v {} · {} · {:.1}, {:.1}", r.team, r.opponent, r.date, xs[i], ys[i]));
-                s.circle(px(xs[i]), py(ys[i]), 4.5, "#8d8b98", "none", 0.0, r#"opacity="0.7""#);
+                s.circle(px(xs[i]), py(ys[i]), 4.5, "#A3B3AA", "none", 0.0, r#"opacity="0.7""#);
             }
         }
     }
@@ -778,7 +778,7 @@ pub fn player_card(c: &Ctx, p: &PlayerStats) -> Board {
             if into_box {
                 s.arrow(x, yy, a2, b2, "#ffffff", 2.4, 9.0, "");
             } else if ex - e.x >= 15.0 {
-                s.line(x, yy, a2, b2, "#cfcdd8", 1.2, r#"opacity="0.6""#);
+                s.line(x, yy, a2, b2, "#F5F3EE", 1.2, r#"opacity="0.6""#);
             }
         }
     }

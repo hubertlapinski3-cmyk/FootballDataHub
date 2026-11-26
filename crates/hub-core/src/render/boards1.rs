@@ -107,7 +107,7 @@ pub fn xg_flow(c: &Ctx) -> Board {
         let before: f64 = c.a.t(sd).shots.iter().take_while(|&&k| k != q).map(|&k| c.m.events[k].shot.as_ref().unwrap().xg).sum();
         let (gx, gy) = (px(e.t / 60.0), py(before + sh.xg));
         let (lx, ly) = (gx.clamp(x0 + 160.0, x0 + w - 160.0) - 120.0, (gy - 120.0).max(y0 + 30.0));
-        s.curved_arrow(lx + 110.0, ly + 8.0, gx - 6.0, gy - 8.0, 0.25, "#cfcdd8", 1.6);
+        s.curved_arrow(lx + 110.0, ly + 8.0, gx - 6.0, gy - 8.0, 0.25, "#F5F3EE", 1.6);
         let runs = vec![("Biggest chance: ".to_string(), theme::MUTED.to_string()), (format!("{} {} · {:.2} xG", c.pname(sd, e.player), e.label_minute(), sh.xg), c.col(sd).to_string())];
         s.text_runs(lx - 60.0, ly, &runs, 14.0, 700, Anchor::Start, BODY);
     }
@@ -178,7 +178,7 @@ pub fn goal_origins(c: &Ctx) -> Vec<Board> {
                 }
                 if e.kind != Kind::Carry {
                     s.tip = Some(format!("{}. {} · {:?} · {}'{:02}", num, c.pname(e.side, e.player), e.kind, e.minute, e.second));
-                    s.circle(sx, sy, 10.0, "#120d16", &col, 2.0, "");
+                    s.circle(sx, sy, 10.0, "#12211A", &col, 2.0, "");
                     s.t(sx, sy + 4.0, &num.to_string(), 10.5, 700, theme::TEXT, Anchor::Middle);
                     num += 1;
                 }
@@ -216,7 +216,7 @@ pub fn win_odds(c: &Ctx) -> Board {
     let l = &c.a.live;
     s.t(60.0, 205.0, &format!("LIKELIER WINNER FOR   {} {:.0}% OF THE MATCH   ·   {} {:.0}%   ·   LEVEL {:.0}%", c.name(Side::Home).to_uppercase(), l.likelier_home * 100.0, c.name(Side::Away).to_uppercase(), l.likelier_away * 100.0, l.likelier_draw * 100.0), 15.0, 800, theme::TEXT, Anchor::Start);
     let (bx, by, bw, bh) = (60.0, 235.0, W - 120.0, 120.0);
-    let segs = [(w.p_home, c.col(Side::Home).to_string(), format!("{} win", c.name(Side::Home))), (w.p_draw, "#6b6878".to_string(), "Draw".into()), (w.p_away, c.col(Side::Away).to_string(), format!("{} win", c.name(Side::Away)))];
+    let segs = [(w.p_home, c.col(Side::Home).to_string(), format!("{} win", c.name(Side::Home))), (w.p_draw, "#A3B3AA".to_string(), "Draw".into()), (w.p_away, c.col(Side::Away).to_string(), format!("{} win", c.name(Side::Away)))];
     let mut x = bx;
     for (p, col, lab) in segs.iter() {
         let ww = bw * p;
@@ -250,11 +250,11 @@ pub fn win_odds(c: &Ctx) -> Board {
     let ap: Vec<(f64, f64)> = l.minutes.iter().zip(&l.away).map(|(m, v)| (px(*m), py(*v))).collect();
     s.polyline(&ap, c.col(Side::Away), 3.0, "");
     let dp: Vec<(f64, f64)> = l.minutes.iter().zip(&l.draw).map(|(m, v)| (px(*m), py(*v))).collect();
-    s.polyline(&dp, "#9a98a6", 2.0, r#"stroke-dasharray="6 5""#);
+    s.polyline(&dp, "#A3B3AA", 2.0, r#"stroke-dasharray="6 5""#);
     let mut lx = x0;
     lx = legend_item(&mut s, lx, y0 - 16.0, "line", c.col(Side::Home), &format!("{} win", c.name(Side::Home)));
     lx = legend_item(&mut s, lx, y0 - 16.0, "line", c.col(Side::Away), &format!("{} win", c.name(Side::Away)));
-    legend_item(&mut s, lx, y0 - 16.0, "dash", "#9a98a6", "Draw");
+    legend_item(&mut s, lx, y0 - 16.0, "dash", "#A3B3AA", "Draw");
     s.t(x0, y0 + ch + 76.0, &format!("Replayed {} times. The curve is a transparent heuristic on score, time and xG, not a betting model.", w.sims), 12.0, 400, theme::GREY, Anchor::Start);
     footer(&mut s, c, "Read the stated event, time window and denominator before comparing the teams. At most one goal is drawn per possession so rebounds are not double counted.");
     Board::new("03_win_odds", "Simulated win odds and expected points", s)
@@ -352,7 +352,7 @@ pub fn corridors(c: &Ctx) -> Board {
         draw(&mut s, &t.through_balls, &sem.through, 3.4, "Through-ball attempt", true);
         for (lab, xm, n) in [("LHS", 48.6, t.hs_left.len()), ("ZONE 14", 34.0, t.z14.len()), ("RHS", 19.4, t.hs_right.len())] {
             let (lx, ly) = p.p(60.0, xm);
-            s.rrect(lx - 38.0, ly - 12.0, 76.0, 22.0, 4.0, "#0b0a12", "#cfcdd8", 1.0);
+            s.rrect(lx - 38.0, ly - 12.0, 76.0, 22.0, 4.0, "#0B1510", "#F5F3EE", 1.0);
             s.t(lx, ly + 4.0, &format!("{lab}: {n}"), 11.0, 700, theme::TEXT, Anchor::Middle);
         }
     }
@@ -423,7 +423,7 @@ pub fn shot_anatomy(c: &Ctx) -> Board {
             if sh.penalty {
                 continue;
             }
-            let fill = if crate::derive::in_six(e.x, e.y) { "#ffffff" } else if crate::derive::in_box(e.x, e.y) { "#3b82f6" } else { "#8d8b98" };
+            let fill = if crate::derive::in_six(e.x, e.y) { "#ffffff" } else if crate::derive::in_box(e.x, e.y) { "#3b82f6" } else { "#A3B3AA" };
             let (x, y) = p.p(e.x, e.y);
             let r = shot_r(sh.xg) * 0.8;
             s.tip = Some(shot_tip(c, e));
@@ -452,9 +452,9 @@ pub fn shot_anatomy(c: &Ctx) -> Board {
     let y = 980.0;
     lx = legend_item(&mut s, lx, y, "circle", "#ffffff", "6-yard box");
     lx = legend_item(&mut s, lx, y, "circle", "#3b82f6", "18-yard box");
-    lx = legend_item(&mut s, lx, y, "circle", "#8d8b98", "Outside box");
-    lx = legend_item(&mut s, lx, y, "triangle", "#cfcdd8", "Headed shot");
-    lx = legend_item(&mut s, lx, y, "diamond", "#cfcdd8", "First-touch shot");
+    lx = legend_item(&mut s, lx, y, "circle", "#A3B3AA", "Outside box");
+    lx = legend_item(&mut s, lx, y, "triangle", "#F5F3EE", "Headed shot");
+    lx = legend_item(&mut s, lx, y, "diamond", "#F5F3EE", "First-touch shot");
     legend_item(&mut s, lx, y, "ring", &c.th.semantic.goal, "Goal (gold ring)");
     footer(&mut s, c, "Shading separates the 6-yard box, the rest of the 18-yard box and outside the box; marker shape identifies headed vs first-touch efforts and size scales with xG. Penalties excluded.");
     Board::new("06_shot_anatomy", "Shot anatomy", s)
@@ -653,7 +653,7 @@ pub fn passing_by_third(c: &Ctx, sd: Side) -> Board {
         for q in order {
             let e = &c.m.events[q];
             let key = e.pass.as_ref().map(|p| p.key_pass).unwrap_or(false);
-            let lc = if key { "#ffffff" } else if e.success { col.as_str() } else { "#5f5c6b" };
+            let lc = if key { "#ffffff" } else if e.success { col.as_str() } else { "#A3B3AA" };
             let (a1, b1) = p.p(e.x, e.y);
             let (a2, b2) = p.p(e.end().0, e.end().1);
             s.line(a1, b1, a2, b2, lc, if key { 2.4 } else { 1.0 }, if e.success { r#"opacity="0.75""# } else { r#"opacity="0.5""# });
@@ -716,7 +716,7 @@ pub fn pass_network(c: &Ctx, sd: Side, half: u8) -> Board {
         let (x2, y2) = p.p(pb.0 / pb.2, pb.1 / pb.2);
         let w = 1.0 + 9.0 * (*n as f64 / maxp);
         s.tip = Some(format!("{} ↔ {} · {} completed passes", c.pname(sd, Some(*a)), c.pname(sd, Some(*b)), n));
-        s.line(x1, y1, x2, y2, "#b9b6c8", w, &format!(r#"opacity="{:.2}" stroke-linecap="round""#, 0.25 + 0.6 * (*n as f64 / maxp)));
+        s.line(x1, y1, x2, y2, "#A3B3AA", w, &format!(r#"opacity="{:.2}" stroke-linecap="round""#, 0.25 + 0.6 * (*n as f64 / maxp)));
     }
     // replacement dotted lines
     for pl in &participants {
@@ -739,7 +739,7 @@ pub fn pass_network(c: &Ctx, sd: Side, half: u8) -> Board {
         if came_on {
             s.square(x, y, r * 0.85, &col, "#ffffff", 1.5);
         } else if went_off {
-            s.circle(x, y, r, "#1a1420", "#ffffff", 3.0, "");
+            s.circle(x, y, r, "#1A2E24", "#ffffff", 3.0, "");
             s.circle(x, y, r - 5.0, &col, "none", 0.0, r#"opacity="0.65""#);
         } else {
             s.circle(x, y, r, &col, "#ffffff", 1.5, "");

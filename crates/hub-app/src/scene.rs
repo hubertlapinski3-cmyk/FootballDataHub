@@ -43,9 +43,20 @@ fn col(s: &str, o: f32) -> Option<Color32> {
         return None;
     }
     // near-black board panels become violet glass on the app backdrop
-    // near-black board panels take the Darkroom card tone
-    if matches!(s, "#0f0c15" | "#0e0b14" | "#0b0a12") {
-        let c = style::ROOM_CARD;
+    // Scenes built before the Darkroom palette carry the old violet-grey tones: map them on the fly so
+    // every board panel, axis and label matches the fixa surfaces.
+    let lower = s.to_ascii_lowercase();
+    let mapped: Option<Color32> = match lower.as_str() {
+        "#0f0c15" | "#0e0b14" | "#100d17" | "#16121c" | "#151220" | "#120d16" => Some(style::ROOM_CARD),
+        "#1a1422" | "#1a1420" | "#1c1826" => Some(style::ROOM_CARD_HI),
+        "#2a2633" | "#2b2433" | "#29202a" => Some(style::ROOM_LINE),
+        "#0b0a12" => Some(style::INK),
+        "#140c18" => Some(style::BOARD_BG2),
+        "#cfcdd8" | "#f2f2f5" | "#e8e8ee" => Some(style::PRINT),
+        "#9a98a6" | "#8d8b98" | "#6b6878" | "#5f5c6b" | "#b9b6c8" | "#b8b6c2" | "#a7a5b2" => Some(style::ROOM_MUTED),
+        _ => None,
+    };
+    if let Some(c) = mapped {
         return Some(Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), (o.clamp(0.0, 1.0) * 255.0) as u8));
     }
     let c = style::hex(s);
@@ -153,6 +164,7 @@ pub fn paint(ui: &Ui, rect: Rect, sc: &Scene, o: &PaintOpts) {
     // motion: data marks enter in order with a short stagger
     let n_marks = sc.prims.iter().filter(|p| { let (l, t) = prim_layer_tip(p); l >= 0 || t >= 0 }).count().max(1) as f32;
     let mut mark_i = 0f32;
+    let mut fades: std::collections::HashMap<i32, f32> = Default::default();
     let visible = ui.clip_rect();
     for (pi, p) in sc.prims.iter().enumerate() {
         let (layer, tip) = prim_layer_tip(p);
@@ -168,8 +180,11 @@ pub fn paint(ui: &Ui, rect: Rect, sc: &Scene, o: &PaintOpts) {
             }
             mark_i += 1.0;
             if let Some(h) = o.hidden {
-                if layer >= 0 && h.contains(&layer) {
-                    alpha *= 0.1;
+                if layer >= 0 {
+                    // toggled layers fade between full strength and a faint ghost over 0.18 s
+                    let on = !h.contains(&layer);
+                    let v = *fades.entry(layer).or_insert_with(|| ui.ctx().animate_bool_with_time(ui.scope_id().with(("layer", layer)), on, 0.18));
+                    alpha *= 0.12 + 0.88 * v;
                 }
             }
         }

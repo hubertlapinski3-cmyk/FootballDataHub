@@ -39,6 +39,9 @@ pub struct Scene {
     pub tips: Vec<String>,
     pub layers: Vec<String>,
     pub legend: Vec<LegendHit>,
+    /// index of the first footer primitive (how-to-read lines), 0 when there is none
+    #[serde(default)]
+    pub footer_start: usize,
 }
 
 fn attr_f(extra: &str, key: &str) -> Option<f32> {
