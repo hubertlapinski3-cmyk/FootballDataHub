@@ -22,9 +22,11 @@ pub fn xt_heatmap(c: &Ctx, sd: Side) -> Board {
     let mut all: Vec<f64> = c.a.team.iter().flat_map(|t| t.xt_grid.iter().copied()).filter(|v| *v > 0.0).collect();
     all.sort_by(|a, b| a.partial_cmp(b).unwrap());
     let top = all.get(((all.len() as f64) * 0.95) as usize).copied().unwrap_or(0.05).max(0.01);
-    // the grid is the visual: no pitch markings, cells with thin dark gutters, values in white
+    // the grid is the visual: no pitch markings, cells with thin dark gutters. Top-3 pass vectors sit
+    // on a translucent toggleable layer, and the numbers are drawn last, on dark pills, so they stay readable.
     let p = Pitch::up(80.0, 200.0, 760.0, 780.0, 0.0);
     s.rect(p.x0 - 2.0, p.y0 - 2.0, p.w + 4.0, p.h + 4.0, "#24382D", "");
+    let mut labels: Vec<(f64, f64, String)> = vec![];
     for row in 0..12 {
         for col in 0..8 {
             let v = t.xt_grid[row * 8 + col];
@@ -39,16 +41,26 @@ pub fn xt_heatmap(c: &Ctx, sd: Side) -> Board {
             }
             s.rect(rx, ry, rw, rh, &fill, "");
             if v >= 0.04 {
-                s.t(rx + rw / 2.0, ry + rh / 2.0 + 6.0, &format!("{v:.2}"), 16.0, 800, "#ffffff", Anchor::Middle);
+                labels.push((rx + rw / 2.0, ry + rh / 2.0, format!("{v:.2}")));
             }
         }
     }
     p.label_attack(&mut s);
-    for (i, _) in t.top_xt.iter().take(3) {
+    for (rank, (i, v)) in t.top_xt.iter().take(3).enumerate() {
         let e = &c.m.events[*i];
         let (a1, b1) = p.p(e.x, e.y);
         let (a2, b2) = p.p(e.end().0, e.end().1);
-        s.arrow(a1, b1, a2, b2, "#ffffff", 3.0, 12.0, "");
+        s.layer = Some("Top 3 xT passes".to_string());
+        s.tip = Some(format!("{}. {} {:02}:{:02} · xT {v:.3}", rank + 1, c.pname(sd, e.player), e.minute, e.second));
+        s.arrow(a1, b1, a2, b2, "#F5F3EE", 2.0, 11.0, r#"opacity="0.55""#);
+        s.circle(a1, b1, 4.0, "#F5F3EE", "none", 0.0, r#"opacity="0.7""#);
+        s.layer = None;
+    }
+    s.layer_idx("Top 3 xT passes");
+    // numbers on top of everything, on small dark pills
+    for (cx, cy, txt) in &labels {
+        s.rrect(cx - 25.0, cy - 14.0, 50.0, 28.0, 14.0, "#0B1510", "none", 0.0);
+        s.t(*cx, cy + 7.0, txt, 19.0, 800, "#F5F3EE", Anchor::Middle);
     }
     // horizontal colour scale under the grid
     let (bx, by, bw) = (p.x0, p.y0 + p.h + 30.0, p.w);
@@ -70,7 +82,7 @@ pub fn xt_heatmap(c: &Ctx, sd: Side) -> Board {
         s.t(px0 + 24.0, yy, &format!("{}. {} {:02}:{:02}", k + 1, c.pname(sd, e.player), e.minute, e.second), 15.0, 700, theme::TEXT, Anchor::Start);
         s.t(px0 + 536.0, yy, &format!("{v:.3}"), 15.0, 700, theme::TEXT, Anchor::End);
     }
-    legend_item(&mut s, px0 + 24.0, py0 + 590.0, "line", "#ffffff", "Top 3 xT passes drawn");
+    legend_item(&mut s, px0 + 24.0, py0 + 590.0, "line", "#F5F3EE", "Top 3 xT passes");
     footer(&mut s, c, "Positive xT is the increase in local zone threat from successful passes or carries, summed in 8 by 12 squares where each began. Both teams share one colour scale; it is not a probability of scoring. xT grid fitted on StatsBomb Open Data.");
     Board::new(&format!("21_xt_heatmap_{}", side_tag(sd)), "xT heatmap", s)
 }

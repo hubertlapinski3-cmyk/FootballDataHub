@@ -23,6 +23,9 @@ impl App {
             return;
         };
         let full = ui.max_rect();
+        // Fit / Fill only when it changes the view meaningfully: a whole-fit board that fills the width already
+        let fill_zoom = (canvas_h_hint(ui.max_rect().height()) / (ui.max_rect().width() * (meta.height / meta.width) as f32)).clamp(1.0, 3.0);
+        let show_fill = (meta.height / meta.width) < 1.1 && (fill_zoom > 1.15 || self.viewer.zoom > 1.01);
         let chrome = if scope_variants(&e, board).len() > 1 { 128.0 } else { 70.0 };
         // ---- chrome top
         let mut top = ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_size(full.min, Vec2::new(full.width(), chrome))));
@@ -32,14 +35,19 @@ impl App {
                     self.back();
                 }
                 // the title gets what the two icons leave, then truncates
-                let title_w = (ui.available_width() - 2.0 * 48.0 - 24.0 - if (meta.height / meta.width) < 1.1 { 60.0 } else { 0.0 }).max(60.0);
+                let title_w = (ui.available_width() - 2.0 * 48.0 - 8.0 - if show_fill { 60.0 } else { 0.0 }).max(60.0);
                 ui.allocate_ui_with_layout(Vec2::new(title_w, 48.0), Layout::left_to_right(Align::Center), |ui| {
                     ui.set_max_width(title_w);
-                    ui.add(egui::Label::new(RichText::new(&meta.title).font(head(if meta.title.chars().count() > 14 { 19.0 } else { 22.0 })).color(WHITE)).truncate());
+                    // shrink to fit (down to 12) before truncating, so "Match momentum" stays whole
+                    let mut size: f32 = if meta.title.chars().count() > 12 { 19.0 } else { 22.0 };
+                    let est = |sz: f32| meta.title.chars().count() as f32 * sz * 0.62 * text_scale_pct() as f32 / 100.0;
+                    while size > 12.0 && est(size) > title_w {
+                        size -= 1.0;
+                    }
+                    ui.add(egui::Label::new(RichText::new(&meta.title).font(head(size)).color(WHITE)).truncate());
                 });
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    let fill_zoom = (canvas_h_hint(full.height()) / (full.width() * (meta.height / meta.width) as f32)).clamp(1.0, 3.0);
-                    if (meta.height / meta.width) < 1.1 && ui.add(egui::Button::new(RichText::new(if self.viewer.zoom > 1.01 { "Fit" } else { "Fill" }).font(semi(14.0)).color(PRIMARY_ON_DARK)).fill(Color32::TRANSPARENT).min_size(Vec2::splat(48.0))).clicked() {
+                    if show_fill && ui.add(egui::Button::new(RichText::new(if self.viewer.zoom > 1.01 { "Fit" } else { "Fill" }).font(semi(14.0)).color(PRIMARY_ON_DARK)).fill(Color32::TRANSPARENT).min_size(Vec2::splat(48.0))).clicked() {
                         // ease to the new zoom (see the animation step below) instead of snapping
                         self.viewer.target_zoom = Some(if self.viewer.zoom > 1.01 { 1.0 } else { fill_zoom });
                         self.viewer.target_pan = Vec2::ZERO;

@@ -272,14 +272,28 @@ impl App {
         let mx = s.momentum[0].iter().chain(&s.momentum[1]).cloned().fold(0.01f32, f32::max);
         let mid = rect.center().y;
         let x = |i: usize| rect.left() + 6.0 + i as f32 / (n - 1) as f32 * (rect.width() - 12.0);
-        for (k, sgn, col) in [(0usize, -1.0f32, SECONDARY), (1, 1.0, SECONDARY_VARIANT)] {
+        // club colours, as on the Match momentum board: home above the midline, away below
+        let cols = [self.team_col(m, 0), self.team_col(m, 1)];
+        for (k, sgn) in [(0usize, -1.0f32), (1, 1.0)] {
+            let col = cols[k];
             let mut pts = vec![egui::pos2(x(0), mid)];
             for (i, v) in s.momentum[k].iter().enumerate() {
                 pts.push(egui::pos2(x(i), mid + sgn * v / mx * (h / 2.0 - 6.0)));
             }
             pts.push(egui::pos2(x(n - 1), mid));
-            p.add(egui::Shape::convex_polygon(vec![], Color32::TRANSPARENT, Stroke::NONE));
-            p.add(egui::Shape::line(pts, Stroke::new(2.0, col)));
+            // filled area: split into one quad per step (a concave outline cannot be a convex polygon)
+            let fill = Color32::from_rgba_unmultiplied(col.r(), col.g(), col.b(), 190);
+            let mut mesh = egui::Mesh::default();
+            for w in pts.windows(2) {
+                let base = mesh.vertices.len() as u32;
+                for q in [egui::pos2(w[0].x, mid), w[0], egui::pos2(w[1].x, mid), w[1]] {
+                    mesh.colored_vertex(q, fill);
+                }
+                mesh.add_triangle(base, base + 1, base + 2);
+                mesh.add_triangle(base + 1, base + 3, base + 2);
+            }
+            p.add(egui::Shape::mesh(mesh));
+            p.add(egui::Shape::line(pts, Stroke::new(1.5, col)));
         }
         p.line_segment([egui::pos2(rect.left() + 6.0, mid), egui::pos2(rect.right() - 6.0, mid)], Stroke::new(1.0, ROOM_LINE));
         for (side, minute, _) in &s.goals {

@@ -349,23 +349,41 @@ pub fn momentum(c: &Ctx) -> Board {
     s.t(x0 + w, y0 + 20.0, &c.name(Side::Home).to_uppercase(), 15.0, 800, &hc, Anchor::End);
     s.t(x0 + w, y0 + h - 8.0, &c.name(Side::Away).to_uppercase(), 15.0, 800, &ac, Anchor::End);
     s.t(x0 - 16.0, mid, "xT built in the window", 11.0, 500, theme::MUTED, Anchor::End);
-    // spells
+    // spells: the bar holds only the minute range (and only when it fits); the full breakdown is a list
+    // underneath, and every segment answers a tap with its exact numbers
     let sy = y0 + h + 60.0;
     s.t(x0, sy - 10.0, "SPELLS", 12.0, 800, theme::TEXT, Anchor::Start);
     for sp in &mo.spells {
         let (a, b) = (px(sp.start), px(sp.end));
         let dom = if sp.share_home >= 0.5 { &hc } else { &ac };
-        s.rect(a + 1.0, sy, (b - a - 2.0).max(1.0), 70.0, dom, "");
-        if b - a > 110.0 {
+        s.tip = Some(format!("{:.0}–{:.0}' · {} {:.0}% of the threat · xG {:.2} – {:.2}", sp.start, sp.end, if sp.share_home >= 0.5 { c.name(Side::Home) } else { c.name(Side::Away) }, sp.share_home.max(1.0 - sp.share_home) * 100.0, sp.xg_home.max(0.0), sp.xg_away.max(0.0)));
+        s.rect(a + 1.0, sy, (b - a - 2.0).max(1.0), 50.0, dom, "");
+        let label = format!("{:.0}–{:.0}'", sp.start, sp.end);
+        // 13 px type after the mobile boost is about 20 px: measure before placing
+        if b - a - 2.0 > text_w(&label, 14.0, false) * 1.9 {
             let on = if theme::Rgb::hex(dom).unwrap().luminance() > 0.45 { "#000" } else { "#fff" };
-            s.t((a + b) / 2.0, sy + 30.0, &format!("{:.0}–{:.0}'  {:.0} / {:.0}", sp.start, sp.end, sp.share_home * 100.0, (1.0 - sp.share_home) * 100.0), 14.0, 800, on, Anchor::Middle);
-            s.t((a + b) / 2.0, sy + 52.0, &format!("{:.2} – {:.2} xG", sp.xg_home, sp.xg_away), 12.5, 500, on, Anchor::Middle);
+            s.t((a + b) / 2.0, sy + 30.0, &label, 14.0, 800, on, Anchor::Middle);
         }
     }
     for mm in (0..=(dur as i32)).step_by(15) {
-        s.t(px(mm as f64), sy + 96.0, &mm.to_string(), 12.0, 400, theme::MUTED, Anchor::Middle);
+        s.t(px(mm as f64), sy + 76.0, &mm.to_string(), 12.0, 400, theme::MUTED, Anchor::Middle);
     }
-    s.t(x0 + w / 2.0, sy + 118.0, "Match minute", 12.0, 500, theme::MUTED, Anchor::Middle);
+    s.t(x0 + w / 2.0, sy + 98.0, "Match minute", 12.0, 500, theme::MUTED, Anchor::Middle);
+    // vertical summary: one row per spell, colour chip, range, share and xG
+    let mut ly = sy + 184.0;
+    // one container behind the whole list keeps it a single block when the phone layout is cut into bands
+    s.rrect(x0 - 14.0, ly - 60.0, w + 28.0, 36.0 + 30.0 * mo.spells.len() as f64 + 30.0, 16.0, "#12211A", "none", 0.0);
+    s.t(x0, ly - 36.0, "SPELL BREAKDOWN", 12.0, 800, theme::TEXT, Anchor::Start);
+    for sp in &mo.spells {
+        let dom = if sp.share_home >= 0.5 { &hc } else { &ac };
+        s.rect(x0, ly - 14.0, 12.0, 12.0, dom, "");
+        s.t(x0 + 26.0, ly - 2.0, &format!("{:.0}–{:.0}'", sp.start, sp.end), 14.0, 800, theme::TEXT, Anchor::Start);
+        s.t(x0 + 160.0, ly - 2.0, &format!("{:.0} / {:.0}% of the threat", sp.share_home * 100.0, (1.0 - sp.share_home) * 100.0), 13.0, 500, theme::TEXT, Anchor::Start);
+        s.t(x0 + w, ly - 2.0, &format!("{:.2} – {:.2} xG", sp.xg_home.max(0.0), sp.xg_away.max(0.0)), 13.0, 500, theme::MUTED, Anchor::End);
+        ly += 30.0;
+    }
+    s.h = s.h.max(ly + 150.0);
+    s.scene.h = s.h as f32;
     footer(&mut s, c, "Threat added by successful moves, totalled over a rolling eight minutes and weighted towards the middle of that window. Spells are cut where the share of threat turns; each is priced in the shot xG it produced. Triangles mark substitutions, red blocks mark cards.");
     Board::new("15_momentum", "Match momentum", s)
 }

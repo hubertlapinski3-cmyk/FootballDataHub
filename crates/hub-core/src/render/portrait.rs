@@ -196,7 +196,10 @@ fn cut(items: &[(usize, Box4)], rows: bool, stuck: u8) -> Node {
     }
     if stuck >= 1 || items.len() <= 1 {
         let b = items.iter().map(|x| x.1).reduce(union).unwrap_or((0.0, 0.0, 1.0, 1.0));
-        return Node::Leaf { items: items.iter().map(|x| x.0).collect(), b };
+        // paint order is the board's own: cut() sorts by position, which would put cells over arrows
+        let mut idx: Vec<usize> = items.iter().map(|x| x.0).collect();
+        idx.sort_unstable();
+        return Node::Leaf { items: idx, b };
     }
     cut(items, !rows, stuck + 1)
 }
