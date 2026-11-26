@@ -260,6 +260,12 @@ fn main() {
     h.app.compare.right = Some((sample, 1));
     h.app.compare.ran = true;
     h.shot(&o("7_compare.png"), 0.0);
+    h.app.compare.players_mode = true;
+    h.app.compare.pl_left = None;
+    h.app.compare.pl_right = None;
+    h.shot(&o("7b_compare_players.png"), 0.0);
+    h.shot(&o("7c_compare_players_bars.png"), 900.0);
+    h.app.compare.players_mode = false;
     h.app.stack = vec![Screen::Home, Screen::Settings];
     h.shot(&o("8_settings.png"), 0.0);
     h.app.stack = vec![Screen::Home, Screen::Matches];

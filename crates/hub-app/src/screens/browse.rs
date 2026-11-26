@@ -308,6 +308,7 @@ impl App {
                         3 => {
                             self.compare.left = Some((m, 0));
                             self.compare.right = Some((m, 1));
+                            self.compare.players_mode = false;
                             self.push(Screen::Compare);
                         }
                         _ => {}
@@ -495,6 +496,9 @@ impl App {
                         self.push(Screen::Viewer { m, board: "22_goalkeeper_frames".into() });
                     }
                 }
+                if ghost(ui, "Compare player", true) {
+                    self.open_player_compare(m, &p);
+                }
                 let w = ui.available_width();
                 if self.draw_board(ui, m, &p.board, w, false, true).clicked() {
                     self.push(Screen::Viewer { m, board: p.board.clone() });
@@ -530,6 +534,13 @@ impl App {
             }
             ScrollArea::vertical().id_salt("compare_screen").show(ui, |ui| {
                 ui.set_max_width(ui.available_width()); // wrap to the viewport, never widen it
+                if let Some(i) = tab_row(ui, &["Teams", "Players"], self.compare.players_mode as usize) {
+                    self.compare.players_mode = i == 1;
+                }
+                if self.compare.players_mode {
+                    self.compare_players(ui);
+                    return;
+                }
                 for (k, label) in [(0, "Left team"), (1, "Right team")] {
                     let cur = if k == 0 { self.compare.left } else { self.compare.right };
                     let cur_label = teams.iter().find(|t| Some((t.0, t.1)) == cur).map(|t| t.2.clone()).unwrap_or_default();
@@ -671,6 +682,89 @@ impl App {
                 ui.add_space(20.0);
             });
         });
+    }
+
+    fn open_player_compare(&mut self, m: usize, p: &library::PlayerMeta) {
+        let e = self.lib.entries[m].clone();
+        // opponent: same role on the other side first, then that side's most-used player
+        let opp = e.s.players.iter().filter(|q| q.side != p.side).max_by(|a, b| (a.role == p.role).cmp(&(b.role == p.role)).then(a.minutes.total_cmp(&b.minutes))).map(|q| q.id);
+        self.compare.players_mode = true;
+        self.compare.pl_left = Some((m, p.id));
+        self.compare.pl_right = opp.map(|id| (m, id));
+        self.push(Screen::Compare);
+    }
+
+    /// Two players side by side: pickers, a dual profile radar and grouped comparison bars.
+    fn compare_players(&mut self, ui: &mut Ui) {
+        let all: Vec<(usize, library::PlayerMeta)> = self.lib.entries.iter().enumerate().flat_map(|(m, e)| e.s.players.iter().map(move |p| (m, p.clone()))).collect();
+        let find = |key: Option<(usize, u64)>| all.iter().find(|(m, p)| Some((*m, p.id)) == key).cloned();
+        // defaults: the most-used player on each side
+        let top = |side: usize| all.iter().filter(|(_, p)| p.side == side).max_by(|a, b| a.1.minutes.total_cmp(&b.1.minutes)).map(|(m, p)| (*m, p.id));
+        if find(self.compare.pl_left).is_none() {
+            self.compare.pl_left = top(0);
+        }
+        if find(self.compare.pl_right).is_none() {
+            self.compare.pl_right = top(1);
+        }
+        let label = |p: &library::PlayerMeta| format!("#{} {} · {} ({:.0}')", p.shirt, p.name, p.role, p.minutes);
+        for (k, title) in [(0usize, "Left player"), (1, "Right player")] {
+            let cur = if k == 0 { self.compare.pl_left } else { self.compare.pl_right };
+            let cur_p = find(cur);
+            let col = cur_p.as_ref().map(|(m, p)| self.team_col(*m, p.side)).unwrap_or(WHITE);
+            let text = cur_p.as_ref().map(|(_, p)| label(p)).unwrap_or_default();
+            ui.label(RichText::new(title).font(bold(12.0)).color(DARK_TEXT2));
+            egui::ComboBox::from_id_salt(("cmpp", k)).selected_text(RichText::new(text).color(col)).width(ui.available_width()).show_ui(ui, |ui| {
+                for (m, p) in &all {
+                    let key = Some((*m, p.id));
+                    if ui.selectable_label(key == cur, label(p)).clicked() {
+                        if k == 0 {
+                            self.compare.pl_left = key;
+                        } else {
+                            self.compare.pl_right = key;
+                        }
+                    }
+                }
+            });
+        }
+        let (Some(l), Some(r)) = (find(self.compare.pl_left), find(self.compare.pl_right)) else { return };
+        let (cl, cr) = (self.team_col(l.0, l.1.side), self.team_col(r.0, r.1.side));
+        ui.add_space(8.0);
+        let hw = ui.available_width() - 26.0;
+        ui.allocate_ui_with_layout(Vec2::new(hw, 0.0), Layout::top_down(Align::Min), |ui| {
+            ui.columns(2, |c| {
+                c[0].add(egui::Label::new(RichText::new(l.1.short.to_uppercase()).font(head(20.0)).color(cl)).truncate());
+                c[1].with_layout(Layout::right_to_left(Align::Min), |ui| ui.add(egui::Label::new(RichText::new(r.1.short.to_uppercase()).font(head(20.0)).color(cr)).truncate()));
+            });
+        });
+        section_title(ui, "Profile per 90 minutes", true);
+        dual_radar(ui, &l.1, &r.1, cl, cr);
+        let groups = ["Attacking & Shooting", "Passing & Progression", "Involvement & Defending"];
+        for (g, name) in groups.iter().enumerate() {
+            section_title(ui, name, true);
+            for (label, a, b, fa, fb) in group_rows(&l.1, &r.1, g) {
+                let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width() - 26.0, 68.0), Sense::hover());
+                let p = ui.painter();
+                let tot = (fa + fb).max(1e-9) as f32;
+                let mid = rect.center().x;
+                let bw = rect.width() * 0.22;
+                // label on its own line so long names never meet the figures
+                p.text(egui::pos2(mid, rect.top() + 4.0), egui::Align2::CENTER_TOP, label, semi(11.5), DARK_TEXT2);
+                p.text(egui::pos2(rect.left(), rect.top() + 22.0), egui::Align2::LEFT_TOP, &a, head(19.0), cl);
+                p.text(egui::pos2(rect.right(), rect.top() + 22.0), egui::Align2::RIGHT_TOP, &b, head(19.0), cr);
+                let wl = bw * fa as f32 / tot;
+                let wr = bw * fb as f32 / tot;
+                let by = rect.top() + 52.0;
+                p.rect_filled(egui::Rect::from_min_size(egui::pos2(mid - 6.0 - wl, by), Vec2::new(wl, 8.0)), 3.0, cl);
+                p.rect_filled(egui::Rect::from_min_size(egui::pos2(mid + 6.0, by), Vec2::new(wr, 8.0)), 3.0, cr);
+                // the leader is marked by an arrow beside its bar, so the lead reads without colour
+                if (fa - fb).abs() > 1e-9 {
+                    let x = if fa > fb { mid - 10.0 - wl - 8.0 } else { mid + 10.0 + wr + 8.0 };
+                    p.text(egui::pos2(x, by + 4.0), egui::Align2::CENTER_CENTER, "▲", body(9.0), SECONDARY);
+                }
+                p.line_segment([rect.left_bottom(), rect.right_bottom()], Stroke::new(1.0, DARK_LINE));
+            }
+        }
+        ui.add_space(20.0);
     }
 
     // ------------------------------------------------------------------ 8 settings
@@ -951,6 +1045,87 @@ pub fn draw_icon_col(ui: &Ui, r: egui::Rect, kind: &str, colr: Color32) {
 }
 
 /// One-line scope / metric badge for a hub card: who and what the board covers.
+/// Per-90 profile on eight axes; pass completion is already a ratio.
+fn profile(p: &library::PlayerMeta) -> [f64; 8] {
+    let e = p.extra.clone().unwrap_or_default();
+    let per = |v: f64| if p.minutes > 0.0 { v * 90.0 / p.minutes } else { 0.0 };
+    [per(p.goals as f64), per(p.xg), per(p.xa), per(p.shots as f64), e.pass_pct, per(e.prog_passes as f64), per(e.def_actions as f64), per(p.vaep)]
+}
+
+const RADAR_AXES: [&str; 8] = ["Goals", "xG", "xA", "Shots", "Pass %", "Prog. passes", "Def. actions", "VAEP"];
+
+fn dual_radar(ui: &mut Ui, a: &library::PlayerMeta, b: &library::PlayerMeta, ca: Color32, cb: Color32) {
+    use std::f32::consts::{FRAC_PI_2, TAU};
+    let (pa, pb) = (profile(a), profile(b));
+    // max per axis so both players share one scale; pass completion is a fixed 0..1 ratio
+    let max: Vec<f64> = (0..8).map(|i| if i == 4 { 1.0 } else { pa[i].max(pb[i]).max(1e-9) }).collect();
+    let w = ui.available_width();
+    let r = ((w * 0.5) - 84.0).clamp(60.0, 110.0);
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(w, 2.0 * (r + 44.0)), Sense::hover());
+    let c = rect.center();
+    let point = |rad: f32, i: usize| {
+        let ang = -FRAC_PI_2 + i as f32 * TAU / 8.0;
+        egui::pos2(c.x + rad * ang.cos(), c.y + rad * ang.sin())
+    };
+    let p = ui.painter();
+    for k in 1..=4 {
+        let rr = r * k as f32 / 4.0;
+        p.add(egui::Shape::closed_line((0..8).map(|i| point(rr, i)).collect(), Stroke::new(1.0, DARK_LINE)));
+    }
+    for i in 0..8 {
+        p.line_segment([c, point(r, i)], Stroke::new(1.0, DARK_LINE));
+        p.text(point(r + 26.0, i), egui::Align2::CENTER_CENTER, RADAR_AXES[i], semi(11.0), DARK_TEXT2);
+    }
+    for (prof, col) in [(pa, ca), (pb, cb)] {
+        let poly: Vec<egui::Pos2> = (0..8).map(|i| point(r * (prof[i] / max[i]).clamp(0.0, 1.0) as f32, i)).collect();
+        p.add(egui::Shape::convex_polygon(poly.clone(), Color32::from_rgba_unmultiplied(col.r(), col.g(), col.b(), 60), Stroke::NONE));
+        p.add(egui::Shape::closed_line(poly, Stroke::new(2.0, col)));
+    }
+    ui.horizontal_wrapped(|ui| {
+        for (p, col) in [(a, ca), (b, cb)] {
+            let (dot, _) = ui.allocate_exact_size(Vec2::splat(12.0), Sense::hover());
+            ui.painter().circle_filled(dot.center(), 6.0, col);
+            ui.label(RichText::new(format!("{} · {}", p.short, p.role)).font(semi(12.0)).color(WHITE));
+            ui.add_space(12.0);
+        }
+    });
+}
+
+/// Rows of one comparison group: (label, left text, right text, left value, right value).
+fn group_rows(a: &library::PlayerMeta, b: &library::PlayerMeta, g: usize) -> Vec<(&'static str, String, String, f64, f64)> {
+    let ea = a.extra.clone().unwrap_or_default();
+    let eb = b.extra.clone().unwrap_or_default();
+    let d2 = |v: f64| format!("{v:.2}");
+    let pct = |v: f64| format!("{:.0}%", v * 100.0);
+    let ratio = |x: usize, y: usize| format!("{x}/{y}");
+    let row = |label: &'static str, sa: String, sb: String, fa: f64, fb: f64| (label, sa, sb, fa, fb);
+    match g {
+        0 => vec![
+            row("Goals", a.goals.to_string(), b.goals.to_string(), a.goals as f64, b.goals as f64),
+            row("xG", d2(a.xg), d2(b.xg), a.xg, b.xg),
+            row("Shots", a.shots.to_string(), b.shots.to_string(), a.shots as f64, b.shots as f64),
+            row("Box entries", ea.box_entries.to_string(), eb.box_entries.to_string(), ea.box_entries as f64, eb.box_entries as f64),
+            row("Final-third receptions", ea.ft_receptions.to_string(), eb.ft_receptions.to_string(), ea.ft_receptions as f64, eb.ft_receptions as f64),
+        ],
+        1 => vec![
+            row("Passes", ea.passes.to_string(), eb.passes.to_string(), ea.passes as f64, eb.passes as f64),
+            row("Pass %", pct(ea.pass_pct), pct(eb.pass_pct), ea.pass_pct, eb.pass_pct),
+            row("Progressive passes", ea.prog_passes.to_string(), eb.prog_passes.to_string(), ea.prog_passes as f64, eb.prog_passes as f64),
+            row("Line-breaking passes", ea.line_breaks.to_string(), eb.line_breaks.to_string(), ea.line_breaks as f64, eb.line_breaks as f64),
+            row("Inferred xA", d2(a.xa), d2(b.xa), a.xa, b.xa),
+            row("xGChain", d2(ea.xgchain), d2(eb.xgchain), ea.xgchain, eb.xgchain),
+        ],
+        _ => vec![
+            row("Touches", a.touches.to_string(), b.touches.to_string(), a.touches as f64, b.touches as f64),
+            row("Take-ons won", ea.take_ons_won.to_string(), eb.take_ons_won.to_string(), ea.take_ons_won as f64, eb.take_ons_won as f64),
+            row("Positive xT", d2(ea.positive_xt), d2(eb.positive_xt), ea.positive_xt, eb.positive_xt),
+            row("Recoveries", ea.recoveries.to_string(), eb.recoveries.to_string(), ea.recoveries as f64, eb.recoveries as f64),
+            row("Aerials won", ratio(ea.aerials_won, ea.aerials), ratio(eb.aerials_won, eb.aerials), ea.aerials_won as f64, eb.aerials_won as f64),
+            row("VAEP", d2(a.vaep), d2(b.vaep), a.vaep, b.vaep),
+        ],
+    }
+}
+
 fn board_badge(e: &library::Entry, id: &str) -> String {
     let s = &e.s;
     let f = |v: Option<f64>| v.map(|x| format!("{x:.1}")).unwrap_or("–".into());

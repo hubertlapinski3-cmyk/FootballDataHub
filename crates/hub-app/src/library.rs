@@ -32,6 +32,27 @@ pub struct PlayerMeta {
     pub xa: f64,
     pub vaep: f64,
     pub board: String,
+    /// Event-derived figures for the player comparison; absent in summaries built before they existed.
+    #[serde(default)]
+    pub extra: Option<PlayerExtra>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PlayerExtra {
+    pub passes: usize,
+    pub pass_pct: f64,
+    pub prog_passes: usize,
+    pub line_breaks: usize,
+    pub xgchain: f64,
+    pub box_entries: usize,
+    pub ft_receptions: usize,
+    pub take_ons_won: usize,
+    pub positive_xt: f64,
+    pub recoveries: usize,
+    pub aerials_won: usize,
+    pub aerials: usize,
+    pub def_actions: usize,
+    pub key_passes: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -288,6 +309,22 @@ pub fn build_match(root: &Path, src: Source, online: bool, relay: Option<matchhu
                 xa: p.inferred_xa,
                 vaep: p.vaep_off + p.vaep_def,
                 board: format!("31_player_{}_{}", if sd == Side::Home { "home" } else { "away" }, p.id),
+                extra: Some(PlayerExtra {
+                    passes: p.passes,
+                    pass_pct: if p.passes > 0 { p.passes_completed as f64 / p.passes as f64 } else { 0.0 },
+                    prog_passes: p.progressive_passes,
+                    line_breaks: p.line_breaks,
+                    xgchain: p.xgchain,
+                    box_entries: p.box_entries,
+                    ft_receptions: p.ft_receptions,
+                    take_ons_won: p.take_ons.0,
+                    positive_xt: p.positive_xt,
+                    recoveries: p.recoveries,
+                    aerials_won: p.aerials.0,
+                    aerials: p.aerials.1,
+                    def_actions: p.def_actions,
+                    key_passes: p.key_passes,
+                }),
             }
         })
         .collect();

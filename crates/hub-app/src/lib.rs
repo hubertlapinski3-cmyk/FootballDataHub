@@ -113,6 +113,10 @@ pub struct CompareState {
     pub groups: [bool; 4],
     pub swipe: f32,
     pub ran: bool,
+    /// false = Teams (match-level side by side), true = Players (two players, any matches)
+    pub players_mode: bool,
+    pub pl_left: Option<(usize, u64)>,
+    pub pl_right: Option<(usize, u64)>,
 }
 
 pub struct App {
@@ -176,7 +180,7 @@ impl App {
             input: String::new(),
             toast: None,
             viewer: ViewerState::fresh(0.0),
-            compare: CompareState { left: None, right: None, groups: [true; 4], swipe: 0.0, ran: false },
+            compare: CompareState { left: None, right: None, groups: [true; 4], swipe: 0.0, ran: false, players_mode: false, pl_left: None, pl_right: None },
             theme_text,
             crest_tex: Default::default(),
             last_dark: None,
