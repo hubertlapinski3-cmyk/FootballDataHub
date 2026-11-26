@@ -110,7 +110,7 @@ impl App {
             }
             let ir = egui::Rect::from_center_size(egui::pos2(r.center().x, cy), Vec2::splat(22.0));
             crate::screens::browse::draw_icon_col(ui, ir, icon, c);
-            ui.painter().text(egui::pos2(r.center().x, r.bottom() - 10.0), egui::Align2::CENTER_CENTER, *label, if active { semi(11.0) } else { body(11.0) }, if active { if dark { WHITE } else { PRIMARY } } else { idle });
+            ui.painter().text(egui::pos2(r.center().x, r.bottom() - 10.0), egui::Align2::CENTER_CENTER, *label, egui::FontId::new(if rect.width() < 360.0 { 10.0 } else { 11.0 }, if active { egui::FontFamily::Name("semibold".into()) } else { egui::FontFamily::Proportional }), if active { if dark { WHITE } else { PRIMARY } } else { idle });
             if resp.is_pointer_button_down_on() {
                 ui.painter().circle_filled(egui::pos2(r.center().x, cy), 24.0, Color32::from_rgba_unmultiplied(255, 255, 255, 22));
             }
@@ -151,23 +151,23 @@ impl App {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 8.0;
             let w = ui.available_width();
+            // names shrink to fit the side (full -> short -> code) so the row never widens the screen
+            let chars = (((w * 0.38 - 40.0) / (bold(14.0).size * 0.62)).floor() as usize).clamp(3, 12);
             ui.allocate_ui_with_layout(Vec2::new(w * 0.38, 40.0), Layout::right_to_left(Align::Center), |ui| {
                 self.crest(ui, m, 0, 30.0);
-                ui.label(RichText::new(fit_name(&s.home, &s.home_short, 12)).font(bold(14.0)).color(hc));
+                ui.label(RichText::new(fit_name(&s.home, &s.home_short, chars)).font(bold(14.0)).color(hc));
             });
             ui.allocate_ui_with_layout(Vec2::new(w * 0.2, 40.0), Layout::centered_and_justified(egui::Direction::LeftToRight), |ui| {
-                ui.label(RichText::new(format!("{} — {}", s.score[0], s.score[1])).font(head(30.0)).color(WHITE));
+                ui.label(RichText::new(format!("{}–{}", s.score[0], s.score[1])).font(head(30.0)).color(WHITE));
             });
             ui.allocate_ui_with_layout(Vec2::new(w * 0.38, 40.0), Layout::left_to_right(Align::Center), |ui| {
                 self.crest(ui, m, 1, 30.0);
-                ui.label(RichText::new(fit_name(&s.away, &s.away_short, 12)).font(bold(14.0)).color(ac));
+                ui.label(RichText::new(fit_name(&s.away, &s.away_short, chars)).font(bold(14.0)).color(ac));
             });
         });
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             ui.label(RichText::new(scope).font(bold(12.0)).color(DARK_TEXT2));
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                ui.label(RichText::new(format!("{} · {}", s.competition, s.date)).font(body(12.0)).color(DARK_TEXT2));
-            });
+            ui.label(RichText::new(format!("{} · {}", s.competition, s.date)).font(body(12.0)).color(DARK_TEXT2));
         });
         let (r, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 3.0), Sense::hover());
         ui.painter().rect_filled(egui::Rect::from_min_max(r.min, egui::pos2(r.center().x, r.max.y)), 0.0, hc);
@@ -243,7 +243,8 @@ impl App {
             ui.set_width(width);
             ui.horizontal(|ui| {
                 self.crest(ui, m, 0, 28.0);
-                ui.label(RichText::new(format!("{}  {}–{}  {}", fit_name(&e.s.home, &e.s.home_short, 11), e.s.score[0], e.s.score[1], fit_name(&e.s.away, &e.s.away_short, 11))).font(head(19.0)).color(fg()));
+                let chars = (((width - 90.0) / 2.0 / (head(19.0).size * 0.5)).floor() as usize).clamp(3, 11);
+                ui.label(RichText::new(format!("{}  {}–{}  {}", fit_name(&e.s.home, &e.s.home_short, chars), e.s.score[0], e.s.score[1], fit_name(&e.s.away, &e.s.away_short, chars))).font(head(19.0)).color(fg()));
                 self.crest(ui, m, 1, 28.0);
             });
             ui.label(RichText::new(format!("{} · {}", if e.s.competition.is_empty() { "Match" } else { &e.s.competition }, e.s.date)).font(body(12.0)).color(sub()));
@@ -282,11 +283,11 @@ pub fn scope_variants(e: &Entry, id: &str) -> Vec<(String, String)> {
         for s in ["home", "away"] {
             let cand = format!("10_pass_network_{s}_{half}");
             if ids.iter().any(|x| **x == cand) {
-                out.push((format!("TEAM VIEW · {}", if s == "home" { e.s.home.to_uppercase() } else { e.s.away.to_uppercase() }), cand));
+                out.push(((if s == "home" { e.s.home.clone() } else { e.s.away.clone() }), cand));
             }
         }
         for h in ["h1", "h2"] {
-            out.push((if h == "h1" { "1ST HALF".into() } else { "2ND HALF".into() }, format!("10_pass_network_{side}_{h}")));
+            out.push((if h == "h1" { "1st half".into() } else { "2nd half".into() }, format!("10_pass_network_{side}_{h}")));
         }
         return out;
     }
@@ -295,11 +296,11 @@ pub fn scope_variants(e: &Entry, id: &str) -> Vec<(String, String)> {
         for s in ["home", "away"] {
             let cand = format!("{base}_{s}");
             if ids.iter().any(|x| **x == cand) {
-                out.push((format!("TEAM VIEW · {}", if s == "home" { e.s.home.to_uppercase() } else { e.s.away.to_uppercase() }), cand));
+                out.push(((if s == "home" { e.s.home.clone() } else { e.s.away.clone() }), cand));
             }
         }
     } else {
-        out.push(("FULL MATCH".into(), id.to_string()));
+        out.push(("Full match".into(), id.to_string()));
     }
     out
 }

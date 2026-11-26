@@ -28,7 +28,7 @@ impl App {
         let mut top = ui.new_child(egui::UiBuilder::new().max_rect(Rect::from_min_size(full.min, Vec2::new(full.width(), chrome))));
         egui::Frame::new().inner_margin(egui::Margin::symmetric(10, 2)).show(&mut top, |ui| {
             ui.horizontal(|ui| {
-                if ui.add(egui::Button::new(RichText::new("←").font(bold(22.0)).color(WHITE)).fill(Color32::TRANSPARENT).min_size(Vec2::splat(48.0))).clicked() {
+                if back_button(ui, WHITE).clicked() {
                     self.back();
                 }
                 ui.add(egui::Label::new(RichText::new(&meta.title).font(head(if meta.title.chars().count() > 14 { 19.0 } else { 22.0 })).color(WHITE)).truncate());
@@ -61,9 +61,9 @@ impl App {
             if scope_variants(&e, board).len() > 1 { ScrollArea::horizontal().id_salt("scopes").show(ui, |ui| {
                 ui.horizontal(|ui| {
                     let vars = scope_variants(&e, board);
-                    let has_full = vars.iter().any(|v| v.0 == "FULL MATCH");
+                    let has_full = vars.iter().any(|v| v.0 == "Full match");
                     if !has_full {
-                        let _ = chip(ui, "FULL MATCH", false, true);
+                        let _ = chip(ui, "Full match", false, true);
                     }
                     let _ = has_full;
                     for (label, id) in vars {

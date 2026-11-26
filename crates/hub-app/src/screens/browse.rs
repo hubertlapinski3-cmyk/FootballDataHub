@@ -68,7 +68,7 @@ impl App {
                 ui.label(RichText::new("Paste a WhoScored match ID or URL").font(body(13.5)).color(sub()));
                 let running = self.build.lock().unwrap().running;
                 ui.add(egui::TextEdit::singleline(&mut self.input).hint_text("e.g. 1650630 or https://www.whoscored.com/Matches/…").desired_width(f32::INFINITY).min_size(Vec2::new(0.0, 48.0)).font(body(15.0)));
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     let ok = !self.input.trim().is_empty() && !running;
                     if cta(ui, "Build Match", ok) {
                         let s = self.input.trim().to_string();
@@ -138,9 +138,11 @@ impl App {
                     self.push(Screen::Hub(i));
                 }
                 section_title(ui, "Quick actions", lt());
-                ui.columns(4, |cols| {
-                    let items = [("list", "Matches"), ("grid", "Boards"), ("compare", "Compare"), ("gear", "Settings")];
-                    for (k, (icon, label)) in items.iter().enumerate() {
+                let ncol = if ui.available_width() < 380.0 || self.prefs.text_scale > 115 { 2 } else { 4 };
+                let items = [("list", "Matches"), ("grid", "Boards"), ("compare", "Compare"), ("gear", "Settings")];
+                for chunk in items.chunks(ncol) {
+                ui.columns(ncol, |cols| {
+                    for (k, (icon, label)) in chunk.iter().enumerate() {
                         let r = card(lt()).show(&mut cols[k], |ui| {
                             ui.vertical_centered(|ui| {
                                 let (ir, _) = ui.allocate_exact_size(Vec2::splat(28.0), Sense::hover());
@@ -149,21 +151,22 @@ impl App {
                             });
                         });
                         if r.response.interact(Sense::click()).clicked() {
-                            match k {
-                                0 => self.push(Screen::Matches),
-                                1 => {
+                            match *label {
+                                "Matches" => self.push(Screen::Matches),
+                                "Boards" => {
                                     if self.lib.entries.is_empty() {
                                         self.toast(cols[k].ctx(), "Build a match first");
                                     } else {
                                         self.push(Screen::Hub(0))
                                     }
                                 }
-                                2 => self.push(Screen::Compare),
+                                "Compare" => self.push(Screen::Compare),
                                 _ => self.push(Screen::Settings),
                             }
                         }
                     }
                 });
+                }
                 ui.add_space(20.0);
             });
         });
@@ -195,6 +198,18 @@ impl App {
             }
             let mut open = None;
             let mut del = None;
+            if self.lib.entries.is_empty() {
+                ui.add_space(40.0);
+                ui.vertical_centered(|ui| {
+                    ui.label(RichText::new("No matches yet").font(head(26.0)).color(fg()));
+                    ui.label(RichText::new("Build a match from Home or open the sample to see its boards here.").font(body(14.0)).color(sub()));
+                    ui.add_space(12.0);
+                    if cta(ui, "Go to Home", true) {
+                        self.go_home();
+                    }
+                });
+                return;
+            }
             ScrollArea::vertical().id_salt("matches").show(ui, |ui| {
                 for i in 0..self.lib.entries.len() {
                     let a = self.stagger(i);
@@ -206,8 +221,17 @@ impl App {
                     ui.horizontal(|ui| {
                         ui.label(RichText::new(format!("{} boards · {}", self.lib.entries[i].s.boards.len(), self.lib.entries[i].s.source)).font(body(12.0)).color(sub()));
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            if ui.add(egui::Button::new(RichText::new("Delete").color(ERROR)).fill(Color32::TRANSPARENT)).clicked() {
-                                del = Some(i);
+                            // destructive: a second tap confirms, Cancel backs out
+                            if self.confirm_delete == Some(i) {
+                                if ui.add(egui::Button::new(RichText::new("Delete for good").font(semi(14.0)).color(WHITE)).fill(ERROR).corner_radius(24).min_size(Vec2::new(0.0, 48.0))).clicked() {
+                                    del = Some(i);
+                                    self.confirm_delete = None;
+                                }
+                                if ghost(ui, "Cancel", lt()) {
+                                    self.confirm_delete = None;
+                                }
+                            } else if ui.add(egui::Button::new(RichText::new("Delete").font(semi(14.0)).color(if lt() { ERROR_ON_DARK } else { ERROR })).fill(Color32::TRANSPARENT).min_size(Vec2::new(64.0, 48.0))).clicked() {
+                                self.confirm_delete = Some(i);
                             }
                         });
                     });
@@ -239,7 +263,7 @@ impl App {
                 self.back();
             }
             ScrollArea::vertical().id_salt("hub").show(ui, |ui| {
-                self.match_header(ui, m, "FULL MATCH");
+                self.match_header(ui, m, "Full match");
                 ui.add_space(8.0);
                 ui.label(RichText::new(&e.s.headline).font(head(24.0)).color(WHITE));
                 super::super::style::definition_chip(ui, "box entry followed by a shot = shot later in the same possession", true);
@@ -459,7 +483,15 @@ impl App {
                 self.back();
             }
             if teams.len() < 2 {
-                ui.label(RichText::new("Build at least one match to compare teams.").color(DARK_TEXT2));
+                ui.add_space(40.0);
+                ui.vertical_centered(|ui| {
+                    ui.label(RichText::new("Nothing to compare yet").font(head(26.0)).color(WHITE));
+                    ui.label(RichText::new("Compare needs one built match: it lines up its two teams side by side.").font(body(14.0)).color(DARK_TEXT2));
+                    ui.add_space(12.0);
+                    if cta(ui, "Go to Home", true) {
+                        self.go_home();
+                    }
+                });
                 return;
             }
             if self.compare.left.is_none() {
@@ -690,6 +722,19 @@ impl App {
                             }
                         });
                     }
+                });
+                section_title(ui, "Text size", lt());
+                card(lt()).show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.horizontal_wrapped(|ui| {
+                        for pct in [100u32, 115, 130, 150] {
+                            if chip(ui, &format!("{pct}%"), self.prefs.text_scale == pct, lt()) {
+                                self.prefs.text_scale = pct;
+                                self.save_prefs();
+                            }
+                        }
+                    });
+                    ui.label(RichText::new("Applies to every screen. Boards keep their own type and zoom with pinch.").font(body(12.0)).color(sub()));
                 });
                 section_title(ui, "Motion", lt());
                 card(lt()).show(ui, |ui| {

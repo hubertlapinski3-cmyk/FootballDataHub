@@ -76,16 +76,35 @@ pub fn install_fonts(ctx: &egui::Context) {
     ctx.set_fonts(fonts);
 }
 
+static TEXT_SCALE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(100);
+/// In-app text size (percent). Android's NativeActivity does not expose the system font scale,
+/// so the setting lives in the app; every font helper below applies it.
+pub fn set_text_scale(pct: u32) {
+    TEXT_SCALE.store(pct.clamp(100, 160), std::sync::atomic::Ordering::Relaxed);
+}
+fn ts() -> f32 {
+    TEXT_SCALE.load(std::sync::atomic::Ordering::Relaxed) as f32 / 100.0
+}
+
+/// Shared surface tokens (dark / violet look).
+pub const GLASS: Color32 = Color32::from_rgba_premultiplied(13, 13, 13, 13);
+pub const GLASS_LINE: Color32 = Color32::from_rgba_premultiplied(28, 28, 28, 28);
+pub const ERROR_ON_DARK: Color32 = Color32::from_rgb(0xff, 0x6b, 0x81);
+
 pub fn head(size: f32) -> FontId {
+    let size = size * ts();
     FontId::new(size, FontFamily::Name(CONDENSED.into()))
 }
 pub fn bold(size: f32) -> FontId {
+    let size = size * ts();
     FontId::new(size, FontFamily::Name("bold".into()))
 }
 pub fn semi(size: f32) -> FontId {
+    let size = size * ts();
     FontId::new(size, FontFamily::Name("semibold".into()))
 }
 pub fn body(size: f32) -> FontId {
+    let size = size * ts();
     FontId::new(size, FontFamily::Proportional)
 }
 
@@ -196,7 +215,7 @@ pub fn top_bar(ui: &mut Ui, title: &str, dark: bool) -> bool {
     ui.horizontal(|ui| {
         ui.set_min_height(52.0);
         let c = if dark { WHITE } else { BLACK };
-        let r = ui.add(egui::Button::new(RichText::new("←").font(bold(22.0)).color(c)).fill(Color32::TRANSPARENT).min_size(Vec2::splat(48.0)));
+        let r = back_button(ui, c);
         if r.clicked() {
             back = true;
         }
@@ -205,9 +224,27 @@ pub fn top_bar(ui: &mut Ui, title: &str, dark: bool) -> bool {
     back
 }
 
+/// Material-style Up arrow drawn as a vector icon (one icon style across the app), 48dp target.
+pub fn back_button(ui: &mut Ui, c: Color32) -> egui::Response {
+    let (r, resp) = ui.allocate_exact_size(Vec2::splat(48.0), Sense::click());
+    let k = r.center();
+    let st = Stroke::new(2.4, c);
+    let p = ui.painter();
+    if resp.is_pointer_button_down_on() {
+        p.circle_filled(k, 22.0, Color32::from_rgba_unmultiplied(255, 255, 255, 24));
+    }
+    p.line_segment([egui::pos2(k.x - 8.0, k.y), egui::pos2(k.x + 9.0, k.y)], st);
+    p.line_segment([egui::pos2(k.x - 8.0, k.y), egui::pos2(k.x - 1.0, k.y - 7.0)], st);
+    p.line_segment([egui::pos2(k.x - 8.0, k.y), egui::pos2(k.x - 1.0, k.y + 7.0)], st);
+    if resp.has_focus() {
+        p.circle_stroke(k, 22.0, Stroke::new(2.0, SECONDARY));
+    }
+    resp.on_hover_text("Back")
+}
+
 pub fn section_title(ui: &mut Ui, t: &str, dark: bool) {
     ui.add_space(8.0);
-    ui.label(RichText::new(t.to_uppercase()).font(bold(12.5)).color(if dark { DARK_TEXT2 } else { TEXT2 }));
+    ui.label(RichText::new(t).font(semi(15.0)).color(if dark { DARK_TEXT2 } else { TEXT2 }));
 }
 
 /// Screen backdrop for dark surfaces: deep navy fading through indigo, with a soft teal glow low-right.
@@ -232,21 +269,22 @@ pub fn backdrop(ui: &Ui, rect: egui::Rect) {
 /// Underlined text tab row; returns the index tapped.
 pub fn tab_row(ui: &mut Ui, labels: &[&str], active: usize) -> Option<usize> {
     let mut hit = None;
-    ui.horizontal(|ui| {
+    // scrollable tab row: never wider than the screen at large text sizes
+    egui::ScrollArea::horizontal().id_salt(("tabs", labels.len())).show(ui, |ui| ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 22.0;
         for (i, l) in labels.iter().enumerate() {
             let on = i == active;
             let col = if on { WHITE } else { DARK_TEXT2 };
-            let r = ui.add(egui::Label::new(RichText::new(l.to_uppercase()).font(bold(15.0)).color(col)).sense(Sense::click()));
+            let r = ui.add(egui::Button::new(RichText::new(*l).font(bold(15.0)).color(col)).fill(Color32::TRANSPARENT).stroke(Stroke::NONE).min_size(Vec2::new(0.0, 48.0)));
             if on {
-                let y = r.rect.bottom() + 3.0;
+                let y = r.rect.bottom() - 4.0;
                 ui.painter().line_segment([egui::pos2(r.rect.left(), y), egui::pos2(r.rect.right(), y)], Stroke::new(3.0, SECONDARY));
             }
             if r.clicked() {
                 hit = Some(i);
             }
         }
-    });
+    }));
     hit
 }
 

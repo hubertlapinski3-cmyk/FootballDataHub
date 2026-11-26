@@ -187,7 +187,12 @@ fn main() {
         }
         app.lib.reload();
     }
-    let mut h = Harness { time: 100.0, ctx, app, texs: HashMap::new(), size: Vec2::new(412.0, 915.0), ppp: 2.0 };
+    let w: f32 = std::env::var("SHOT_W").ok().and_then(|v| v.parse().ok()).unwrap_or(412.0);
+    let mut app = app;
+    if let Some(t) = std::env::var("TEXT_SCALE").ok().and_then(|v| v.parse().ok()) {
+        app.prefs.text_scale = t;
+    }
+    let mut h = Harness { time: 100.0, ctx, app, texs: HashMap::new(), size: Vec2::new(w, 915.0), ppp: 2.0 };
     let o = |n: &str| out.join(n).display().to_string();
     let sample = h.app.lib.entries.iter().position(|e| e.s.source == "statsbomb").unwrap_or(0);
 

@@ -51,6 +51,13 @@ pub struct Prefs {
     /// Per-screen override: key "home" | "matches" | "report" | "settings", value "light" | "dark" (absent = follow `theme`).
     #[serde(default)]
     pub screen_theme: std::collections::BTreeMap<String, String>,
+    /// In-app text size in percent (100..=150).
+    #[serde(default = "default_text_scale")]
+    pub text_scale: u32,
+}
+
+fn default_text_scale() -> u32 {
+    100
 }
 
 fn default_theme() -> String {
@@ -127,6 +134,8 @@ pub struct App {
     pub show_token: bool,
     /// last failed build: (input that was built, message). Drives the error card with Retry.
     pub failed: Option<(String, String)>,
+    /// match index awaiting a second tap to delete
+    pub confirm_delete: Option<usize>,
 }
 
 impl App {
@@ -165,6 +174,7 @@ impl App {
             now: 0.0,
             show_token: false,
             failed: None,
+            confirm_delete: None,
         }
     }
 
@@ -240,6 +250,7 @@ impl App {
             _ => global,
         };
         style::set_force_dark(force);
+        style::set_text_scale(if self.prefs.text_scale == 0 { 100 } else { self.prefs.text_scale });
         let dark = scr.dark() || force;
         if self.last_dark != Some(dark) {
             style::apply_visuals(&ctx, dark);
@@ -331,14 +342,19 @@ impl App {
             let ppp = ctx.pixels_per_point().max(0.5);
             let mut top = 0.0f32;
             let mut bottom = 0.0f32;
+            let mut left = 0.0f32;
+            let mut right = 0.0f32;
             if let Some(a) = &self.android {
                 let r = a.content_rect();
                 if r.right > r.left && r.bottom > r.top {
                     top = r.top as f32 / ppp;
                     bottom = (full.bottom() - r.bottom as f32 / ppp).max(0.0);
+                    left = r.left as f32 / ppp;
+                    right = (full.right() - r.right as f32 / ppp).max(0.0);
                 }
             }
-            return egui::Rect::from_min_max(egui::pos2(full.left(), full.top() + top.max(36.0)), egui::pos2(full.right(), full.bottom() - bottom.max(44.0)));
+            // landscape cutouts and side navigation bars come in as left/right insets
+            return egui::Rect::from_min_max(egui::pos2(full.left() + left, full.top() + top.max(36.0)), egui::pos2(full.right() - right, full.bottom() - bottom.max(44.0)));
         }
         #[cfg(not(target_os = "android"))]
         full
