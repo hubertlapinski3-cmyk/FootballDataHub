@@ -104,6 +104,14 @@ WhoScored embeds the whole event feed in the match-centre page. The parser uses 
 
 Online fetching is behind the personal-use flag in Settings. It makes one request per match with browser-like headers and caches the result. On a bot wall (HTTP 403), save the page in a browser and import the `.html`, `.json` or `.html.gz` instead. FotMob and SofaScore enrichment (colours, crests, xGOT) is best effort. Every miss is recorded as a fallback in the manifest.
 
+## Player register
+
+Player ages for feeds that do not carry them (StatsBomb open data) come from a trimmed copy of the
+[Reep](https://github.com/withqwerty/reep) v0 register (CC0 1.0, frozen 21 June 2026), embedded at
+`crates/hub-core/data/reep_players.tsv.gz` (4.8 MB, 373,083 players with a date of birth). Players are
+matched by name and aliases, then by nationality and position when a name is shared. Rebuild it with
+`python scripts/trim_reep.py <reep>/data crates/hub-core/data/reep_players.tsv.gz`.
+
 ## Models
 
 The models are fitted with `matchhub train` on 179 StatsBomb Open Data matches (World Cups 2018 and 2022, Euro 2020) and embedded in the binary:

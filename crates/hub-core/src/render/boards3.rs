@@ -22,53 +22,45 @@ pub fn xt_heatmap(c: &Ctx, sd: Side) -> Board {
     let mut all: Vec<f64> = c.a.team.iter().flat_map(|t| t.xt_grid.iter().copied()).filter(|v| *v > 0.0).collect();
     all.sort_by(|a, b| a.partial_cmp(b).unwrap());
     let top = all.get(((all.len() as f64) * 0.95) as usize).copied().unwrap_or(0.05).max(0.01);
-    let p = Pitch::up(80.0, 200.0, 760.0, 840.0, 0.0);
+    // the grid is the visual: no pitch markings, cells with thin dark gutters, values in white
+    let p = Pitch::up(80.0, 200.0, 760.0, 780.0, 0.0);
+    s.rect(p.x0 - 2.0, p.y0 - 2.0, p.w + 4.0, p.h + 4.0, "#29202a", "");
     for row in 0..12 {
         for col in 0..8 {
             let v = t.xt_grid[row * 8 + col];
             let x0 = row as f64 / 12.0 * 105.0;
             let y0 = col as f64 / 8.0 * 68.0;
-            let fill = c.th.seq(sd, v / top);
+            let (ax, ay) = p.p(x0, y0);
+            let (bx, by) = p.p(x0 + 105.0 / 12.0, y0 + 8.5);
+            let (rx, ry, rw, rh) = (ax.min(bx) + 1.0, ay.min(by) + 1.0, (bx - ax).abs() - 2.0, (by - ay).abs() - 2.0);
+            let fill = if v > 0.0 { c.th.seq(sd, v / top) } else { "#151220".to_string() };
             if v > 0.0 {
                 s.tip = Some(format!("xT added from this square: {v:.3}"));
             }
-            p.zone(&mut s, x0, x0 + 105.0 / 12.0, y0, y0 + 8.5, &fill, 1.0);
-            if v >= 0.05 {
-                let (cx, cy) = p.p(x0 + 105.0 / 24.0, y0 + 4.25);
-                s.t(cx, cy + 5.0, &format!("{v:.2}"), 13.0, 800, theme::TEXT, Anchor::Middle);
+            s.rect(rx, ry, rw, rh, &fill, "");
+            if v >= 0.04 {
+                s.t(rx + rw / 2.0, ry + rh / 2.0 + 6.0, &format!("{v:.2}"), 16.0, 800, "#ffffff", Anchor::Middle);
             }
         }
     }
-    for row in 0..=12 {
-        let x = row as f64 / 12.0 * 105.0;
-        let (a1, b1) = p.p(x, 0.0);
-        let (a2, _) = p.p(x, 68.0);
-        s.line(a2, b1, a1, b1, "#3a3644", 0.8, "");
-    }
-    for col in 0..=8 {
-        let y = col as f64 / 8.0 * 68.0;
-        let (a1, b1) = p.p(0.0, y);
-        let (_, b2) = p.p(105.0, y);
-        s.line(a1, b1, a1, b2, "#3a3644", 0.8, "");
-    }
     p.label_attack(&mut s);
-    p.draw(&mut s);
     for (i, _) in t.top_xt.iter().take(3) {
         let e = &c.m.events[*i];
         let (a1, b1) = p.p(e.x, e.y);
         let (a2, b2) = p.p(e.end().0, e.end().1);
-        s.arrow(a1, b1, a2, b2, "#ffffff", 2.5, 10.0, "");
+        s.arrow(a1, b1, a2, b2, "#ffffff", 3.0, 12.0, "");
     }
-    // colourbar
-    let (bx, by, bh) = (860.0, 360.0, 420.0);
+    // horizontal colour scale under the grid
+    let (bx, by, bw) = (p.x0, p.y0 + p.h + 30.0, p.w);
+    s.t(bx, by - 8.0, "xT per square", 13.0, 700, theme::TEXT, Anchor::Start);
     for i in 0..100 {
-        s.rect(bx, by + bh - (i + 1) as f64 * bh / 100.0, 16.0, bh / 100.0 + 0.6, &c.th.seq(sd, i as f64 / 100.0), "");
+        s.rect(bx + i as f64 * bw / 100.0, by, bw / 100.0 + 0.6, 14.0, &c.th.seq(sd, i as f64 / 100.0), "");
     }
     for k in 0..=4 {
         let v = top * k as f64 / 4.0;
-        s.t(bx + 24.0, by + bh - k as f64 / 4.0 * bh + 4.0, &format!("{v:.2}"), 11.0, 500, theme::MUTED, Anchor::Start);
+        let x = bx + k as f64 / 4.0 * bw;
+        s.t(x, by + 34.0, &if k == 4 { format!("{v:.2}+") } else { format!("{v:.2}") }, 12.0, 600, theme::MUTED, if k == 0 { Anchor::Start } else if k == 4 { Anchor::End } else { Anchor::Middle });
     }
-    s.t(bx + 8.0, by + bh + 26.0, "xT per square · tops out at P95", 11.0, 500, theme::MUTED, Anchor::Middle);
     let (px0, py0) = (980.0, 220.0);
     panel(&mut s, px0, py0, 560.0, 620.0);
     s.t(px0 + 24.0, py0 + 40.0, "TOP 10 XT PASSES", 14.0, 800, theme::TEXT, Anchor::Start);
@@ -413,31 +405,45 @@ pub fn progression_scatter(c: &Ctx) -> Board {
 
 // ---------------------------------------------------------------- 27 funnel
 pub fn funnel(c: &Ctx) -> Board {
-    let mut s = Svg::new(W, 1000.0);
-    header(&mut s, c, "From Possession to a Shot on Target", "Each bar is what survived the stage above it · the % between bars is the conversion at that step", Scope::Full);
-    let labels = ["Possessions", "Reached final third", "Then box", "Then shot", "On target"];
+    let mut s = Svg::new(W, 1130.0);
+    header(&mut s, c, "From Possession to a Shot on Target", "Possessions reaching each stage · every bar on one shared scale", Scope::Full);
+    let labels = ["Possessions", "Reached final third", "Entered box", "Attempted shot", "On target"];
     let mx = c.a.t(Side::Home).funnel[0].max(c.a.t(Side::Away).funnel[0]).max(1) as f64;
-    let cx = W / 2.0;
-    s.h(cx - 400.0, 230.0, &c.name(Side::Home).to_uppercase(), 26.0, c.col(Side::Home), Anchor::Middle);
-    s.h(cx + 400.0, 230.0, &c.name(Side::Away).to_uppercase(), 26.0, c.col(Side::Away), Anchor::Middle);
+    // one stage per card, all cards the same width so the phone layout keeps one bar scale
+    let (x0, cw) = (400.0, 800.0);
+    let bar_x = x0 + 220.0;
+    let bar_w = cw - 220.0 - 28.0;
+    let mut y = 170.0;
     for (i, l) in labels.iter().enumerate() {
-        let y = 270.0 + i as f64 * 130.0;
-        s.t(cx, y + 36.0, l, 16.0, 700, theme::TEXT, Anchor::Middle);
-        for sd in Side::both() {
-            let f = &c.a.t(sd).funnel;
-            let w = f[i] as f64 / mx * 460.0;
-            let (x, anchor, tx) = if sd == Side::Home { (cx - 120.0 - w, Anchor::End, cx - 130.0 - w) } else { (cx + 120.0, Anchor::Start, cx + 130.0 + w) };
-            s.tip = Some(format!("{} · {}: {}", c.name(sd), l, f[i]));
-            s.rect(x, y, w.max(2.0), 60.0, c.col(sd), "");
-            s.h(tx, y + 42.0, &f[i].to_string(), 28.0, theme::TEXT, anchor);
-            if i < 4 {
-                let conv = if f[i] > 0 { f[i + 1] as f64 / f[i] as f64 * 100.0 } else { 0.0 };
-                let ax = if sd == Side::Home { cx - 160.0 - (f[i] as f64 / mx * 460.0) * 0.0 - 300.0 } else { cx + 160.0 };
-                s.t(ax, y + 96.0, &format!("↓ {conv:.0}%"), 13.0, 700, c.col(sd), Anchor::Start);
-            }
+        let h = if i == 0 { 128.0 } else { 160.0 };
+        panel(&mut s, x0, y, cw, h);
+        s.t(x0 + cw / 2.0, y + 34.0, &l.to_uppercase(), 17.0, 700, theme::TEXT, Anchor::Middle);
+        for (k, sd) in Side::both().iter().enumerate() {
+            let f = &c.a.t(*sd).funnel;
+            let ry = y + 52.0 + k as f64 * 36.0;
+            let w = (f[i] as f64 / mx * bar_w).max(3.0);
+            s.t(x0 + 24.0, ry + 20.0, &c.name(*sd).to_uppercase(), 14.0, 700, c.col(*sd), Anchor::Start);
+            s.h(x0 + 200.0, ry + 23.0, &f[i].to_string(), 28.0, theme::TEXT, Anchor::End);
+            s.tip = Some(format!("{} · {}: {} of {} possessions", c.name(*sd), l, f[i], f[0]));
+            s.rect(bar_x, ry + 4.0, bar_w, 22.0, "#1c1826", "");
+            s.rect(bar_x, ry + 4.0, w, 22.0, c.col(*sd), "");
         }
+        if i > 0 {
+            let conv = |sd: Side| {
+                let f = &c.a.t(sd).funnel;
+                if f[i - 1] > 0 { format!("{:.0}%", f[i] as f64 / f[i - 1] as f64 * 100.0) } else { "–".into() }
+            };
+            let runs = vec![
+                (format!("Stage conversion from {}:  ", labels[i - 1].to_lowercase()), theme::MUTED.to_string()),
+                (format!("{} {}", c.short(Side::Home), conv(Side::Home)), c.col(Side::Home).to_string()),
+                ("   ·   ".to_string(), theme::MUTED.to_string()),
+                (format!("{} {}", c.short(Side::Away), conv(Side::Away)), c.col(Side::Away).to_string()),
+            ];
+            s.text_runs(x0 + 24.0, y + h - 18.0, &runs, 13.0, 600, Anchor::Start, BODY);
+        }
+        y += h + 22.0;
     }
-    footer(&mut s, c, "Same possession at every stage; the arrows give the share that survived each step. The box stage counts possessions with any touch in the penalty area, so it runs higher than the box-entry figure.");
+    footer(&mut s, c, "Each bar counts possessions that reached the stage; the conversion line is the share of the previous stage that got this far. The box stage counts possessions with any touch in the penalty area, so it runs higher than the box-entry figure.");
     Board::new("27_possession_funnel", "Possession funnel", s)
 }
 

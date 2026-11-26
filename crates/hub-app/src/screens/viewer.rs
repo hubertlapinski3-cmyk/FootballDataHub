@@ -42,7 +42,7 @@ impl App {
                         }
                         self.viewer.pan = Vec2::ZERO;
                     }
-                    let mut icon_btn = |ui: &mut Ui, kind: &str, id: &str| -> bool {
+                    let icon_btn = |ui: &mut Ui, kind: &str, id: &str| -> bool {
                         let (r, resp) = ui.allocate_exact_size(Vec2::splat(48.0), Sense::click());
                         let c = if resp.is_pointer_button_down_on() { WHITE } else { PRIMARY_ON_DARK };
                         crate::screens::browse::draw_icon_col(ui, Rect::from_center_size(r.center(), Vec2::splat(24.0)), kind, c);

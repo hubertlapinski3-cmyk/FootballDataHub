@@ -170,7 +170,13 @@ fn cut(items: &[(usize, Box4)], rows: bool, stuck: u8) -> Node {
     // one glued block: wide spanners (a legend under two pitches) may be what joins the columns
     if !rows && items.len() > 3 {
         let total = items.iter().map(|x| x.1).reduce(union).map(|b| b.2 - b.0).unwrap_or(0.0);
-        let (span, rest): (Vec<_>, Vec<_>) = items.iter().cloned().partition(|x| (x.1 .2 - x.1 .0) > 0.55 * total);
+        let (mut span, mut rest): (Vec<_>, Vec<_>) = items.iter().cloned().partition(|x| (x.1 .2 - x.1 .0) > 0.55 * total);
+        // a container (a panel rect behind its rows) overlaps the rest vertically: it is not a spanner
+        if let Some(rb) = rest.iter().map(|x| x.1).reduce(union) {
+            let (keep, back): (Vec<_>, Vec<_>) = span.into_iter().partition(|x| x.1 .3 <= rb.1 + 4.0 || x.1 .1 >= rb.3 - 4.0);
+            span = keep;
+            rest.extend(back);
+        }
         if !span.is_empty() && !rest.is_empty() {
             let mut gs: Vec<(f32, f32)> = vec![];
             let mut r2 = rest.clone();
@@ -390,7 +396,7 @@ pub fn reflow(sc: &Scene) -> Option<Scene> {
     let rb = bbox(&head_right);
     let cx = rb.map(|b| (b.0 + b.2) / 2.0).unwrap_or(1305.0);
     for p in &head_right {
-        if matches!(p, Prim::T { runs, .. } if runs.iter().any(|r| r.0 == "FULL MATCH")) {
+        if matches!(p, Prim::T { runs, .. } if runs.iter().any(|r| r.0 == "FULL MATCH" || r.0.starts_with("TEAM VIEW") || r.0.starts_with("PLAYER VIEW"))) {
             continue; // the period selector already says it
         }
         let q = xf(p, 0.0, 0.0, 1.0, 1.0, PW / 2.0 - cx, row_y - 52.0);

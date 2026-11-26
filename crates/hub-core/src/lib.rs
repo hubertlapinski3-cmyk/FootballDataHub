@@ -7,6 +7,7 @@ pub mod ml;
 pub mod model;
 pub mod net;
 pub mod narrative;
+pub mod reep;
 pub mod render;
 pub mod sim;
 pub mod sources;
@@ -101,6 +102,14 @@ pub fn build(input: &Input, opts: &BuildOptions, models: &ml::Models, progress: 
     let mut m = load_match(input, opts, &mut |msg: &str| progress(&format!("ingest: {msg}"), 0.05)).context("ingest")?;
     progress("enrich", 0.15);
     sources::enrich::enrich(&mut m, &opts.cache_dir, opts.online);
+    // ages the event feed lacks come from the bundled Reep register (CC0)
+    let (got, want) = reep::fill_ages(&mut m);
+    if want > 0 {
+        m.fallbacks.retain(|f| !f.contains("player ages unavailable"));
+        if got < want {
+            m.fallbacks.push(format!("ages for {} of {} players not found in the Reep register", want - got, want));
+        }
+    }
     let ov = theme::load_overrides(opts.overrides.as_deref());
     for t in m.teams.iter_mut() {
         if let Some(o) = ov.teams.get(&t.source_id).or_else(|| ov.teams.iter().find(|(k, _)| k.eq_ignore_ascii_case(&t.name)).map(|(_, v)| v)) {
