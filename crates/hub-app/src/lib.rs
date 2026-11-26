@@ -83,6 +83,8 @@ pub struct ViewerState {
     pub zoom: f32,
     pub pan: egui::Vec2,
     pub show_manifest: bool,
+    /// export bottom sheet (save / share) is open
+    pub show_export: bool,
     pub hidden: std::collections::HashSet<i32>,
     pub selected: Option<(usize, i32)>,
     pub opened_at: f64,
@@ -92,7 +94,7 @@ pub struct ViewerState {
 
 impl ViewerState {
     pub fn fresh(now: f64) -> ViewerState {
-        ViewerState { zoom: 1.0, pan: egui::Vec2::ZERO, show_manifest: false, hidden: Default::default(), selected: None, opened_at: now, at_top: true }
+        ViewerState { zoom: 1.0, pan: egui::Vec2::ZERO, show_manifest: false, show_export: false, hidden: Default::default(), selected: None, opened_at: now, at_top: true }
     }
 }
 
@@ -411,6 +413,15 @@ impl App {
             };
             let _ = android_bridge::set_gesture_exclusion(a, &rects);
         }
+    }
+
+    /// Clipboard text on Android (JNI); `None` on desktop, where Ctrl+V reaches the text fields directly.
+    #[allow(unused_variables)]
+    pub fn clipboard_text(&self) -> Option<String> {
+        #[cfg(target_os = "android")]
+        return self.android.as_ref().and_then(android_bridge::get_clipboard_text);
+        #[cfg(not(target_os = "android"))]
+        None
     }
 
     #[allow(unused_variables)]

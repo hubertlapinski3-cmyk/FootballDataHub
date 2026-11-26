@@ -119,6 +119,23 @@ impl App {
         }
     }
 
+    /// "Paste" pill (48dp) for link and token fields. Returns the clipboard text when tapped.
+    /// On desktop the text fields already take Ctrl+V, so the pill only explains that.
+    pub fn paste_pill(&mut self, ui: &mut Ui) -> Option<String> {
+        let btn = egui::Button::new(RichText::new("Paste").font(semi(14.0)).color(if lt() { PRINT } else { INK })).fill(Color32::TRANSPARENT).stroke(Stroke::new(1.0, if lt() { PRINT } else { INK })).corner_radius(24).min_size(Vec2::new(84.0, 48.0));
+        if !ui.add(btn).on_hover_text("Paste from the clipboard").clicked() {
+            return None;
+        }
+        match self.clipboard_text() {
+            Some(t) if !t.trim().is_empty() => Some(t),
+            _ => {
+                let msg = if cfg!(target_os = "android") { "Clipboard is empty. Copy the link first." } else { "Use Ctrl+V on desktop." };
+                self.toast(ui.ctx(), msg);
+                None
+            }
+        }
+    }
+
     pub fn crest(&mut self, ui: &mut Ui, m: usize, side: usize, size: f32) {
         let e = &self.lib.entries[m];
         let name = if side == 0 { e.s.home.clone() } else { e.s.away.clone() };

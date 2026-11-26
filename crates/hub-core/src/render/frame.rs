@@ -63,7 +63,7 @@ fn code3(n: &str) -> String {
     s.to_uppercase()
 }
 
-fn crest(s: &mut Svg, cx: f64, cy: f64, r: f64, data: &Option<String>, name: &str, col: &str, key: &str) {
+pub fn crest(s: &mut Svg, cx: f64, cy: f64, r: f64, data: &Option<String>, name: &str, col: &str, key: &str) {
     match data {
         Some(href) => s.image_keyed(cx - r, cy - r, 2.0 * r, 2.0 * r, href, Some(key)),
         None => {

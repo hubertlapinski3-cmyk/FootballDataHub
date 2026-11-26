@@ -59,7 +59,7 @@ impl App {
                     }
                     ui.add_space(8.0);
                     if icon_btn(ui, "share", "export") {
-                        self.export_board(ui.ctx(), m, board);
+                        self.viewer.show_export = true;
                     }
                 });
             });
@@ -186,6 +186,9 @@ impl App {
         if self.viewer.show_manifest {
             self.manifest_sheet(ui, m, board, full, &meta.how);
         }
+        if self.viewer.show_export {
+            self.export_sheet(ui, m, board, full);
+        }
     }
 
     fn manifest_sheet(&mut self, ui: &mut Ui, m: usize, board: &str, full: Rect, how: &str) {
@@ -240,7 +243,22 @@ impl App {
         });
     }
 
-    fn export_board(&mut self, ctx: &egui::Context, m: usize, board: &str) {
+    /// PNG bytes of a board at 2x, rendered from its SVG.
+    fn board_png(&self, m: usize, board: &str) -> Result<Vec<u8>, String> {
+        let svg = std::fs::read_to_string(self.board_path(m, board)).map_err(|e| e.to_string())?;
+        let (w, h, px) = matchhub::render::rasterize(&svg, 2.0).map_err(|e| e.to_string())?;
+        let img = image::RgbaImage::from_raw(w, h, px).ok_or("bad image size")?;
+        let mut out = std::io::Cursor::new(Vec::new());
+        img.write_to(&mut out, image::ImageFormat::Png).map_err(|e| e.to_string())?;
+        Ok(out.into_inner())
+    }
+
+    fn export_name(&self, m: usize, board: &str) -> String {
+        format!("{}_{board}.png", self.lib.entries[m].s.id)
+    }
+
+    /// Writes the PNG next to the app's data (desktop, and Android older than 10).
+    fn export_to_folder(&mut self, ctx: &egui::Context, m: usize, board: &str) {
         #[allow(unused_mut)]
         let mut dir = self.root.join("exports");
         #[cfg(target_os = "android")]
@@ -248,11 +266,62 @@ impl App {
             dir = p.join("exports");
         }
         let _ = std::fs::create_dir_all(&dir);
-        let out = dir.join(format!("{}_{board}.png", self.lib.entries[m].s.id));
-        let svg = std::fs::read_to_string(self.board_path(m, board)).unwrap_or_default();
-        match matchhub::render::save_png(&svg, &out, 2.0) {
-            Ok(()) => self.toast(ctx, &format!("Exported to {}", out.display())),
+        let out = dir.join(self.export_name(m, board));
+        match self.board_png(m, board).and_then(|b| std::fs::write(&out, b).map_err(|e| e.to_string())) {
+            Ok(()) => self.toast(ctx, &format!("Saved to {}", out.display())),
             Err(e) => self.toast(ctx, &format!("Export failed: {e}")),
+        }
+    }
+
+    /// Bottom sheet: save to Pictures (Android MediaStore) or the export folder, share, cancel.
+    fn export_sheet(&mut self, ui: &mut Ui, m: usize, board: &str, full: Rect) {
+        let sheet_h = 4.0 * 56.0 + 64.0;
+        let sheet = Rect::from_min_max(egui::pos2(full.left(), (full.bottom() - sheet_h).max(full.top())), full.max);
+        // scrim: tapping outside closes the sheet
+        let scrim = Rect::from_min_max(full.min, egui::pos2(full.right(), sheet.top()));
+        ui.painter().rect_filled(scrim, 0.0, Color32::from_black_alpha(140));
+        if ui.interact(scrim, ui.scope_id().with("export_scrim"), Sense::click()).clicked() {
+            self.viewer.show_export = false;
+        }
+        ui.painter().rect_filled(sheet, egui::CornerRadius { nw: 22, ne: 22, sw: 0, se: 0 }, ROOM_CARD_HI);
+        ui.painter().line_segment([sheet.left_top() + Vec2::new(sheet.width() / 2.0 - 24.0, 10.0), sheet.left_top() + Vec2::new(sheet.width() / 2.0 + 24.0, 10.0)], Stroke::new(4.0, ROOM_LINE));
+        let mut su = ui.new_child(egui::UiBuilder::new().max_rect(sheet.shrink2(Vec2::new(16.0, 0.0))));
+        su.add_space(24.0);
+        let w = su.available_width();
+        let row = |ui: &mut Ui, label: &str, hint: &str| -> bool {
+            let r = ui.add(egui::Button::new(RichText::new(label).font(semi(16.0)).color(PRINT)).fill(Color32::TRANSPARENT).stroke(Stroke::NONE).min_size(Vec2::new(w, 48.0)));
+            ui.label(RichText::new(hint).font(body(12.0)).color(DARK_TEXT2));
+            r.clicked()
+        };
+        let ctx = ui.ctx().clone();
+        let android = cfg!(target_os = "android");
+        if row(&mut su, if android { "Save to Pictures" } else { "Save to exports folder" }, if android { "Pictures/DataHub, shows up in your gallery" } else { "PNG at 2x" }) {
+            self.viewer.show_export = false;
+            #[cfg(target_os = "android")]
+            {
+                let name = self.export_name(m, board);
+                let saved = self.board_png(m, board).ok().and_then(|png| self.android.as_ref().and_then(|a| crate::android_bridge::save_png_to_pictures(a, &name, &png)));
+                match saved {
+                    Some(_) => self.toast(&ctx, "Saved to Pictures/DataHub"),
+                    None => self.export_to_folder(&ctx, m, board),
+                }
+            }
+            #[cfg(not(target_os = "android"))]
+            self.export_to_folder(&ctx, m, board);
+        }
+        if android && row(&mut su, "Share…", "Send it to Drive, Files, a chat or any other app") {
+            self.viewer.show_export = false;
+            #[cfg(target_os = "android")]
+            {
+                let name = self.export_name(m, board);
+                let ok = self.board_png(m, board).ok().and_then(|png| self.android.as_ref().and_then(|a| crate::android_bridge::save_png_to_pictures(a, &name, &png).and_then(|uri| crate::android_bridge::share_png(a, &uri))));
+                if ok.is_none() {
+                    self.toast(&ctx, "Could not open the share sheet");
+                }
+            }
+        }
+        if row(&mut su, "Cancel", "") {
+            self.viewer.show_export = false;
         }
     }
 }

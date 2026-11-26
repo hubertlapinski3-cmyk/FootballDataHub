@@ -113,6 +113,42 @@ mod imp {
             }
             Some((self.f().GetStaticIntField.unwrap())(self.0, cls, id))
         }
+        unsafe fn jstr(&self, s: &str) -> Option<jstring> {
+            let c = CString::new(s).ok()?;
+            let r = (self.f().NewStringUTF.unwrap())(self.0, c.as_ptr());
+            if self.failed() || r.is_null() {
+                return None;
+            }
+            Some(r)
+        }
+        unsafe fn to_rust(&self, s: jstring) -> Option<String> {
+            let p = (self.f().GetStringUTFChars.unwrap())(self.0, s, null_mut());
+            if p.is_null() {
+                self.failed();
+                return None;
+            }
+            let out = std::ffi::CStr::from_ptr(p).to_string_lossy().into_owned();
+            (self.f().ReleaseStringUTFChars.unwrap())(self.0, s, p);
+            Some(out)
+        }
+        /// `obj.toString()` as a Rust string.
+        unsafe fn to_string_of(&self, obj: jobject) -> Option<String> {
+            let s = self.obj(obj, "toString", "()Ljava/lang/String;", &[])?;
+            self.to_rust(s)
+        }
+        unsafe fn static_obj_field(&self, class: &str, name: &str, sig: &str) -> Option<jobject> {
+            let cls = self.class(class)?;
+            let (n, s) = (CString::new(name).ok()?, CString::new(sig).ok()?);
+            let id = (self.f().GetStaticFieldID.unwrap())(self.0, cls, n.as_ptr(), s.as_ptr());
+            if self.failed() || id.is_null() {
+                return None;
+            }
+            let o = (self.f().GetStaticObjectField.unwrap())(self.0, cls, id);
+            if self.failed() || o.is_null() {
+                return None;
+            }
+            Some(o)
+        }
         /// Run `f` inside a local reference frame so per-frame calls never leak local refs.
         unsafe fn scoped<T>(&self, f: impl FnOnce(&Env) -> Option<T>) -> Option<T> {
             if (self.f().PushLocalFrame.unwrap())(self.0, 32) != 0 {
@@ -158,6 +194,98 @@ mod imp {
                 let bottom = (e.f().GetIntField.unwrap())(e.0, rect, id);
                 let h = e.int(decor, "getHeight", "()I", &[])?;
                 Some((h - bottom).max(0))
+            })
+        }
+    }
+
+    /// First item of the primary clip as text (`ClipboardManager.getPrimaryClip`, `coerceToText`).
+    /// Android 10+ only returns it while the app is in the foreground, which is the case on a tap.
+    pub fn get_clipboard_text(app: &AndroidApp) -> Option<String> {
+        unsafe {
+            let env = Env::attach(app)?;
+            env.scoped(|e| {
+                let activity = app.activity_as_ptr() as jobject;
+                let name = e.jstr("clipboard")?;
+                let cm = e.obj(activity, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;", &[jvalue { l: name }])?;
+                let clip = e.obj(cm, "getPrimaryClip", "()Landroid/content/ClipData;", &[])?;
+                if e.int(clip, "getItemCount", "()I", &[])? < 1 {
+                    return None;
+                }
+                let item = e.obj(clip, "getItemAt", "(I)Landroid/content/ClipData$Item;", &[jvalue { i: 0 }])?;
+                let text = e.obj(item, "coerceToText", "(Landroid/content/Context;)Ljava/lang/CharSequence;", &[jvalue { l: activity }])?;
+                e.to_string_of(text)
+            })
+        }
+    }
+
+    /// Insert a PNG into the shared Pictures collection (MediaStore, API 29+; no permission needed)
+    /// and return its content:// URI. The system chooses nothing: the file lands in Pictures/DataHub.
+    pub fn save_png_to_pictures(app: &AndroidApp, filename: &str, png: &[u8]) -> Option<String> {
+        unsafe {
+            let env = Env::attach(app)?;
+            env.scoped(|e| {
+                if e.sdk_int()? < 29 {
+                    return None;
+                }
+                let activity = app.activity_as_ptr() as jobject;
+                let cv = e.new("android/content/ContentValues", "()V", &[])?;
+                for (k, v) in [("_display_name", filename), ("mime_type", "image/png"), ("relative_path", "Pictures/DataHub")] {
+                    let (jk, jv) = (e.jstr(k)?, e.jstr(v)?);
+                    e.void(cv, "put", "(Ljava/lang/String;Ljava/lang/String;)V", &[jvalue { l: jk }, jvalue { l: jv }])?;
+                }
+                let resolver = e.obj(activity, "getContentResolver", "()Landroid/content/ContentResolver;", &[])?;
+                let table = e.static_obj_field("android/provider/MediaStore$Images$Media", "EXTERNAL_CONTENT_URI", "Landroid/net/Uri;")?;
+                let uri = e.obj(resolver, "insert", "(Landroid/net/Uri;Landroid/content/ContentValues;)Landroid/net/Uri;", &[jvalue { l: table }, jvalue { l: cv }])?;
+                let os = e.obj(resolver, "openOutputStream", "(Landroid/net/Uri;)Ljava/io/OutputStream;", &[jvalue { l: uri }])?;
+                let arr = (e.f().NewByteArray.unwrap())(e.0, png.len() as jsize);
+                if e.failed() || arr.is_null() {
+                    return None;
+                }
+                (e.f().SetByteArrayRegion.unwrap())(e.0, arr, 0, png.len() as jsize, png.as_ptr() as *const jbyte);
+                e.void(os, "write", "([B)V", &[jvalue { l: arr }])?;
+                e.void(os, "close", "()V", &[])?;
+                e.to_string_of(uri)
+            })
+        }
+    }
+
+    /// System share sheet (`ACTION_SEND`, image/png) for a content:// URI such as the one returned by
+    /// `save_png_to_pictures`. The chooser lets the user pick Drive, Files, a messenger, and so on.
+    pub fn share_png(app: &AndroidApp, uri: &str) -> Option<()> {
+        unsafe {
+            let env = Env::attach(app)?;
+            env.scoped(|e| {
+                let activity = app.activity_as_ptr() as jobject;
+                let action = e.jstr("android.intent.action.SEND")?;
+                let intent = e.new("android/content/Intent", "(Ljava/lang/String;)V", &[jvalue { l: action }])?;
+                let mime = e.jstr("image/png")?;
+                e.obj(intent, "setType", "(Ljava/lang/String;)Landroid/content/Intent;", &[jvalue { l: mime }])?;
+                let juri = e.jstr(uri)?;
+                let cls = e.class("android/net/Uri")?;
+                let (n, sg) = (CString::new("parse").ok()?, CString::new("(Ljava/lang/String;)Landroid/net/Uri;").ok()?);
+                let mid = (e.f().GetStaticMethodID.unwrap())(e.0, cls, n.as_ptr(), sg.as_ptr());
+                if e.failed() || mid.is_null() {
+                    return None;
+                }
+                let parsed = (e.f().CallStaticObjectMethodA.unwrap())(e.0, cls, mid, [jvalue { l: juri }].as_ptr());
+                if e.failed() || parsed.is_null() {
+                    return None;
+                }
+                let key = e.jstr("android.intent.extra.STREAM")?;
+                e.obj(intent, "putExtra", "(Ljava/lang/String;Landroid/os/Parcelable;)Landroid/content/Intent;", &[jvalue { l: key }, jvalue { l: parsed }])?;
+                e.obj(intent, "addFlags", "(I)Landroid/content/Intent;", &[jvalue { i: 1 }])?; // FLAG_GRANT_READ_URI_PERMISSION
+                let ccls = e.class("android/content/Intent")?;
+                let (cn, cs) = (CString::new("createChooser").ok()?, CString::new("(Landroid/content/Intent;Ljava/lang/CharSequence;)Landroid/content/Intent;").ok()?);
+                let cm = (e.f().GetStaticMethodID.unwrap())(e.0, ccls, cn.as_ptr(), cs.as_ptr());
+                if e.failed() || cm.is_null() {
+                    return None;
+                }
+                let title = e.jstr("Share board")?;
+                let chooser = (e.f().CallStaticObjectMethodA.unwrap())(e.0, ccls, cm, [jvalue { l: intent }, jvalue { l: title }].as_ptr());
+                if e.failed() || chooser.is_null() {
+                    return None;
+                }
+                e.void(activity, "startActivity", "(Landroid/content/Intent;)V", &[jvalue { l: chooser }])
             })
         }
     }

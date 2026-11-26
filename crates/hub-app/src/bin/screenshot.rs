@@ -264,4 +264,13 @@ fn main() {
     h.shot(&o("8_settings.png"), 0.0);
     h.app.stack = vec![Screen::Home, Screen::Matches];
     h.shot(&o("9_matches.png"), 0.0);
+    // export sheet and the player card in the viewer
+    h.app.stack = vec![Screen::Home, Screen::Hub(sample), Screen::Viewer { m: sample, board: h.app.lib.entries[sample].s.players.iter().find(|p| p.id == pid).unwrap().board.clone() }];
+    h.app.viewer = hub_app::ViewerState::fresh(-10.0);
+    h.shot(&o("10_player_card_viewer.png"), 0.0);
+    h.app.viewer.show_export = true;
+    h.shot(&o("11_export_sheet.png"), 0.0);
+    h.app.viewer.show_export = false;
+    h.app.stack = vec![Screen::Home, Screen::Settings];
+    h.shot(&o("12_settings_paste.png"), 0.0);
 }

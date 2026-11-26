@@ -68,7 +68,15 @@ impl App {
                 ui.label(RichText::new("Data Hub").font(head(34.0)).color(fg()));
                 ui.label(RichText::new("Paste a WhoScored match ID or URL").font(body(13.5)).color(sub()));
                 let running = self.build.lock().unwrap().running;
-                ui.add(egui::TextEdit::singleline(&mut self.input).hint_text("e.g. 1650630 or https://www.whoscored.com/Matches/…").desired_width(f32::INFINITY).min_size(Vec2::new(0.0, 48.0)).font(body(15.0)));
+                ui.horizontal_wrapped(|ui| {
+                    let pill_w = 92.0 * text_scale_pct() as f32 / 100.0;
+                    // narrow screens: the field takes the full row and the Paste pill wraps beneath it
+                    let fw = if ui.available_width() < 340.0 { ui.available_width() } else { ui.available_width() - pill_w - 8.0 };
+                    ui.add(egui::TextEdit::singleline(&mut self.input).hint_text("e.g. 1650630 or https://www.whoscored.com/Matches/…").desired_width(fw.max(80.0)).min_size(Vec2::new(0.0, 48.0)).font(body(15.0)));
+                    if let Some(t) = self.paste_pill(ui) {
+                        self.input = t.trim().to_string();
+                    }
+                });
                 ui.horizontal_wrapped(|ui| {
                     let ok = !self.input.trim().is_empty() && !running;
                     if cta(ui, "Build Match", ok) {
@@ -484,21 +492,13 @@ impl App {
             self.back();
             return;
         };
-        let col = self.team_col(m, p.side);
         egui::Frame::new().inner_margin(egui::Margin::symmetric(12, 4)).show(ui, |ui| {
             if top_bar(ui, &p.short, true) {
                 self.back();
             }
             ScrollArea::vertical().id_salt("player").show(ui, |ui| {
                 ui.set_max_width(ui.available_width()); // wrap to the viewport, never widen it
-                ui.label(RichText::new(&p.name).font(head(32.0)).color(WHITE));
-                ui.label(RichText::new(format!("{} · {} · Touches {} · Shots {}", if p.side == 0 { &e.s.home } else { &e.s.away }, p.role, p.touches, p.shots)).font(body(13.0)).color(DARK_TEXT2));
-                ui.columns(3, |c| {
-                    for (k, (v, l)) in [(format!("{:.2}", p.xg), "xG"), (format!("{:.2}", p.xa), "INFERRED xA"), (format!("{}{:.2}", if p.vaep >= 0.0 { "+" } else { "" }, p.vaep), "VAEP")].iter().enumerate() {
-                        c[k].label(RichText::new(v).font(head(34.0)).color(col));
-                        c[k].label(RichText::new(*l).font(bold(12.0)).color(WHITE));
-                    }
-                });
+                // name, scoreboard, key figures and sections all live in the card itself: shown once
                 if p.role == "Goalkeeper" {
                     if ghost(ui, "Open goalkeeper goal frames", true) {
                         self.push(Screen::Viewer { m, board: "22_goalkeeper_frames".into() });
@@ -508,7 +508,7 @@ impl App {
                 if self.draw_board(ui, m, &p.board, w, false, true).clicked() {
                     self.push(Screen::Viewer { m, board: p.board.clone() });
                 }
-                ui.label(RichText::new("Tap the card to zoom and inspect each wedge. Percentiles compare players in the same role with 30+ minutes; below four peers the pool widens to every 30+ minute player and the caption says so.").font(body(12.0)).color(DARK_TEXT2));
+                ui.label(RichText::new("Tap the card to open it full screen, zoom and inspect each wedge.").font(body(12.0)).color(DARK_TEXT2));
                 ui.add_space(20.0);
             });
         });
@@ -716,20 +716,37 @@ impl App {
                     ui.set_width(ui.available_width());
                     ui.label(RichText::new("WhoScored blocks plain requests, so links are scraped by a headless browser in your repository's scrape-whoscored workflow (built on ricardoherediaj/football-analytics-tutorials). The app reads finished matches from the repo and, with a token, starts the run itself.").font(body(12.5)).color(sub()));
                     ui.label(RichText::new("Repository (owner/name)").font(semi(13.0)));
-                    let rr = ui.add(egui::TextEdit::singleline(&mut self.prefs.relay_repo).desired_width(f32::INFINITY).min_size(Vec2::new(0.0, 48.0)));
-                    if rr.gained_focus() {
-                        rr.scroll_to_me(Some(Align::Center));
-                    }
-                    if rr.lost_focus() {
-                        self.save_prefs();
-                    }
+                    ui.horizontal_wrapped(|ui| {
+                        let pill_w = 92.0 * text_scale_pct() as f32 / 100.0;
+                        let fw = if ui.available_width() < 340.0 { ui.available_width() } else { ui.available_width() - pill_w - 8.0 };
+                        let rr = ui.add(egui::TextEdit::singleline(&mut self.prefs.relay_repo).desired_width(fw.max(80.0)).min_size(Vec2::new(0.0, 48.0)));
+                        if rr.gained_focus() {
+                            rr.scroll_to_me(Some(Align::Center));
+                        }
+                        if rr.lost_focus() {
+                            self.save_prefs();
+                        }
+                        if let Some(t) = self.paste_pill(ui) {
+                            // accept a pasted GitHub link: keep owner/name
+                            let t = t.trim().trim_end_matches('/').trim_end_matches(".git");
+                            let t = t.split("github.com/").last().unwrap_or(t);
+                            self.prefs.relay_repo = t.split('/').take(2).collect::<Vec<_>>().join("/");
+                            self.save_prefs();
+                        }
+                    });
                     ui.label(RichText::new("Token (fine-grained: Actions read/write + Contents read on that repo only)").font(semi(13.0)));
-                    ui.horizontal(|ui| {
-                        let r = ui.add(egui::TextEdit::singleline(&mut self.prefs.relay_token).password(!self.show_token).desired_width(ui.available_width() - 70.0).min_size(Vec2::new(0.0, 48.0)));
+                    ui.horizontal_wrapped(|ui| {
+                        let pill_w = 92.0 * text_scale_pct() as f32 / 100.0;
+                        let fw = if ui.available_width() < 340.0 { ui.available_width() } else { ui.available_width() - pill_w - 96.0 };
+                        let r = ui.add(egui::TextEdit::singleline(&mut self.prefs.relay_token).password(!self.show_token).desired_width(fw.max(60.0)).min_size(Vec2::new(0.0, 48.0)));
                         if r.gained_focus() {
                             r.scroll_to_me(Some(Align::Center));
                         }
                         if r.lost_focus() {
+                            self.save_prefs();
+                        }
+                        if let Some(t) = self.paste_pill(ui) {
+                            self.prefs.relay_token = t.trim().to_string();
                             self.save_prefs();
                         }
                         if chip(ui, if self.show_token { "Hide" } else { "Show" }, false, lt()) {

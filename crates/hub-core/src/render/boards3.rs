@@ -557,44 +557,44 @@ fn measures(p: &PlayerStats) -> Vec<Measure> {
     let m = |label: &'static str, value: f64, display: String| Measure { label, value, display };
     match p.role.unwrap_or(Role::Midfielder) {
         Role::Goalkeeper => vec![
-            m("SAVES", p.saves as f64, p.saves.to_string()),
-            m("CLAIMS", p.claims as f64, p.claims.to_string()),
-            m("SWEEPS", p.sweeps as f64, p.sweeps.to_string()),
-            m("PROGRESSIVE PASS SHARE", p.prog_pass_share, pct(p.prog_pass_share)),
-            m("PASSES", p.passes as f64, p.passes.to_string()),
-            m("COMPLETION", if p.passes > 0 { p.passes_completed as f64 / p.passes as f64 } else { 0.0 }, pct(if p.passes > 0 { p.passes_completed as f64 / p.passes as f64 } else { 0.0 })),
-            m("PROGRESSION METRES", p.progression_m, format!("{:.0}", p.progression_m)),
-            m("XGCHAIN", p.xgchain, format!("{:.2}", p.xgchain)),
+            m("Saves", p.saves as f64, p.saves.to_string()),
+            m("Claims", p.claims as f64, p.claims.to_string()),
+            m("Sweeps", p.sweeps as f64, p.sweeps.to_string()),
+            m("Progressive pass share", p.prog_pass_share, pct(p.prog_pass_share)),
+            m("Passes", p.passes as f64, p.passes.to_string()),
+            m("Completion", if p.passes > 0 { p.passes_completed as f64 / p.passes as f64 } else { 0.0 }, pct(if p.passes > 0 { p.passes_completed as f64 / p.passes as f64 } else { 0.0 })),
+            m("Progression metres", p.progression_m, format!("{:.0}", p.progression_m)),
+            m("xGChain", p.xgchain, format!("{:.2}", p.xgchain)),
         ],
         Role::Defender => vec![
-            m("PROGRESSIVE PASS SHARE", p.prog_pass_share, pct(p.prog_pass_share)),
-            m("PADJ DEF. ACTIONS", p.padj_def, format!("{:.2}", p.padj_def)),
-            m("AERIALS WON", p.aerials.0 as f64, p.aerials.0.to_string()),
-            m("DEFENSIVE HEIGHT", p.def_height, format!("{:.0}", p.def_height)),
-            m("PROGRESSION METRES", p.progression_m, format!("{:.0}", p.progression_m)),
-            m("LINE-BREAK PASSES", p.line_breaks as f64, p.line_breaks.to_string()),
-            m("XGCHAIN", p.xgchain, format!("{:.2}", p.xgchain)),
-            m("RECOVERIES", p.recoveries as f64, p.recoveries.to_string()),
+            m("Progressive pass share", p.prog_pass_share, pct(p.prog_pass_share)),
+            m("PAdj defensive actions", p.padj_def, format!("{:.2}", p.padj_def)),
+            m("Aerials won", p.aerials.0 as f64, p.aerials.0.to_string()),
+            m("Defensive height", p.def_height, format!("{:.0}", p.def_height)),
+            m("Progression metres", p.progression_m, format!("{:.0}", p.progression_m)),
+            m("Line-breaking passes", p.line_breaks as f64, p.line_breaks.to_string()),
+            m("xGChain", p.xgchain, format!("{:.2}", p.xgchain)),
+            m("Recoveries", p.recoveries as f64, p.recoveries.to_string()),
         ],
         Role::Midfielder => vec![
-            m("PROGRESSIVE PASS SHARE", p.prog_pass_share, pct(p.prog_pass_share)),
-            m("PADJ DEF. ACTIONS", p.padj_def, format!("{:.2}", p.padj_def)),
-            m("PROGRESSION METRES", p.progression_m, format!("{:.0}", p.progression_m)),
-            m("LINE-BREAK PASSES", p.line_breaks as f64, p.line_breaks.to_string()),
-            m("XA / 100 PASSES", p.xa_per100, format!("{:.2}", p.xa_per100)),
-            m("XGCHAIN", p.xgchain, format!("{:.2}", p.xgchain)),
-            m("FINAL-THIRD RECEPTIONS", p.ft_receptions as f64, p.ft_receptions.to_string()),
-            m("BOX ENTRIES", p.box_entries as f64, p.box_entries.to_string()),
+            m("Progressive pass share", p.prog_pass_share, pct(p.prog_pass_share)),
+            m("PAdj defensive actions", p.padj_def, format!("{:.2}", p.padj_def)),
+            m("Progression metres", p.progression_m, format!("{:.0}", p.progression_m)),
+            m("Line-breaking passes", p.line_breaks as f64, p.line_breaks.to_string()),
+            m("xA per 100 passes", p.xa_per100, format!("{:.2}", p.xa_per100)),
+            m("xGChain", p.xgchain, format!("{:.2}", p.xgchain)),
+            m("Final-third receptions", p.ft_receptions as f64, p.ft_receptions.to_string()),
+            m("Box entries", p.box_entries as f64, p.box_entries.to_string()),
         ],
         Role::Forward => vec![
-            m("XG", p.xg, format!("{:.2}", p.xg)),
-            m("XA", p.inferred_xa, format!("{:.2}", p.inferred_xa)),
-            m("XGCHAIN", p.xgchain, format!("{:.2}", p.xgchain)),
-            m("BOX ENTRIES", p.box_entries as f64, p.box_entries.to_string()),
-            m("FINAL-THIRD RECEPTIONS", p.ft_receptions as f64, p.ft_receptions.to_string()),
-            m("PROGRESSIVE PASS SHARE", p.prog_pass_share, pct(p.prog_pass_share)),
-            m("TAKE-ONS WON", p.take_ons.0 as f64, p.take_ons.0.to_string()),
-            m("PADJ DEF. ACTIONS", p.padj_def, format!("{:.2}", p.padj_def)),
+            m("xG", p.xg, format!("{:.2}", p.xg)),
+            m("Inferred xA", p.inferred_xa, format!("{:.2}", p.inferred_xa)),
+            m("xGChain", p.xgchain, format!("{:.2}", p.xgchain)),
+            m("Box entries", p.box_entries as f64, p.box_entries.to_string()),
+            m("Final-third receptions", p.ft_receptions as f64, p.ft_receptions.to_string()),
+            m("Progressive pass share", p.prog_pass_share, pct(p.prog_pass_share)),
+            m("Take-ons won", p.take_ons.0 as f64, p.take_ons.0.to_string()),
+            m("PAdj defensive actions", p.padj_def, format!("{:.2}", p.padj_def)),
         ],
     }
 }
@@ -608,19 +608,48 @@ fn percentile(v: f64, pool: &[f64]) -> f64 {
     ((below + 0.5 * eq) / pool.len() as f64 * 100.0).clamp(0.0, 100.0)
 }
 
+/// Greedy word wrap by estimated character width.
+fn wrap_text(text: &str, size: f64, max_w: f64) -> Vec<String> {
+    let per = ((max_w / (size * 0.56)) as usize).max(8);
+    let mut lines = vec![];
+    let mut cur = String::new();
+    for w in text.split_whitespace() {
+        if !cur.is_empty() && cur.chars().count() + 1 + w.chars().count() > per {
+            lines.push(std::mem::take(&mut cur));
+        }
+        if !cur.is_empty() {
+            cur.push(' ');
+        }
+        cur.push_str(w);
+    }
+    if !cur.is_empty() {
+        lines.push(cur);
+    }
+    lines
+}
+
+/// Player card, composed natively for a phone column (640 wide): hero, scoreboard, 2x2 key figures,
+/// percentile ring, touch map, tactical snapshot and grouped stat sections.
 pub fn player_card(c: &Ctx, p: &PlayerStats) -> Board {
-    let mut s = Svg::new(W, 1500.0);
+    const PW: f64 = 640.0;
+    const PAPER: &str = "#F5F3EE";
+    const SAGE: &str = "#6BA68B";
+    const CARD: &str = "#12211A";
+    const CARD_HI: &str = "#1A2E24";
+    const HAIR: &str = "#24382D";
+    const SOFT: &str = "#A3B3AA";
+    let mut s = Svg::new(PW, 4000.0);
     let sd = p.side.unwrap();
     let col = c.col(sd).to_string();
     let role = p.role.unwrap_or(Role::Midfielder);
     // peer pool: same role, 30+ min, at least 4 others; else all 30+ min players
     let same: Vec<&PlayerStats> = c.a.players.iter().filter(|q| q.minutes >= 30.0 && q.role == Some(role)).collect();
     let (pool, pool_note) = if same.len() >= 5 {
-        (same, format!("Ranked against {} players in the same role (30+ min) · grey ring = pool average", c.a.players.iter().filter(|q| q.minutes >= 30.0 && q.role == Some(role)).count() - 1))
+        (same, format!("Ranked against {} players in the same role (30+ min). The grey ring marks the pool average.", c.a.players.iter().filter(|q| q.minutes >= 30.0 && q.role == Some(role)).count() - 1))
     } else {
         let all: Vec<&PlayerStats> = c.a.players.iter().filter(|q| q.minutes >= 30.0).collect();
         let n = all.len();
-        (all, format!("Ranked against all {} players over 30 minutes (fewer than 4 peers in role) · grey ring = pool average", n))
+        (all, format!("Ranked against all {} players over 30 minutes (fewer than 4 peers in role). The grey ring marks the pool average.", n))
     };
     let ms = measures(p);
     let pcts: Vec<f64> = ms.iter().enumerate().map(|(i, m)| {
@@ -632,23 +661,53 @@ pub fn player_card(c: &Ctx, p: &PlayerStats) -> Board {
         let avg = pv.iter().sum::<f64>() / pv.len().max(1) as f64;
         percentile(avg, &pv)
     }).collect();
-    header(&mut s, c, &p.name, &format!("{} · {} · Touches {} · Shots {}", c.name(sd), role.label(), p.touches, p.shots), Scope::Player(sd));
-    // headline tiles: three strongest measures
+
+    // ---- hero: the player once, then the scoreboard pill
+    let mut y = 64.0;
+    s.h(24.0, y, &p.name, 46.0, PAPER, Anchor::Start);
+    y += 30.0;
+    s.t(24.0, y, &format!("{} · {} · Touches {} · Shots {}", c.name(sd), role.label(), p.touches, p.shots), 15.0, 500, SOFT, Anchor::Start);
+    y += 22.0;
+    s.rrect(20.0, y, PW - 40.0, 64.0, 32.0, CARD, "none", 0.0);
+    let (hc, ac) = (c.col(Side::Home).to_string(), c.col(Side::Away).to_string());
+    super::frame::crest(&mut s, 56.0, y + 32.0, 20.0, &c.crests[0], &c.name(Side::Home), &hc, "crest:0");
+    super::frame::crest(&mut s, PW - 56.0, y + 32.0, 20.0, &c.crests[1], &c.name(Side::Away), &ac, "crest:1");
+    s.t(88.0, y + 38.0, &fit_name(c.m, Side::Home, 16.0, 150.0), 16.0, 700, PAPER, Anchor::Start);
+    s.t(PW - 88.0, y + 38.0, &fit_name(c.m, Side::Away, 16.0, 150.0), 16.0, 700, PAPER, Anchor::End);
+    s.h(PW / 2.0, y + 42.0, &format!("{} – {}", c.m.team(Side::Home).score, c.m.team(Side::Away).score), 32.0, PAPER, Anchor::Middle);
+    y += 64.0 + 18.0;
+    // team-colour rule under the pill
+    s.rect(20.0, y - 9.0, (PW - 40.0) / 2.0, 3.0, &hc, "");
+    s.rect(PW / 2.0, y - 9.0, (PW - 40.0) / 2.0, 3.0, &ac, "");
+    y += 14.0;
+
+    // ---- 2x2 key figures: three strongest measures and minutes
     let mut order: Vec<usize> = (0..ms.len()).collect();
-    // strongest measures first; zero-valued measures never headline unless everything is zero
     order.sort_by(|a, b| ((ms[*b].value > 0.0) as u8).cmp(&((ms[*a].value > 0.0) as u8)).then(pcts[*b].partial_cmp(&pcts[*a]).unwrap()));
     let n_pool = pool.len();
-    for (k, &i) in order.iter().take(3).enumerate() {
-        let x = 60.0 + k as f64 * 300.0;
-        s.h(x, 240.0, &ms[i].display, 64.0, &col, Anchor::Start);
-        s.t(x, 270.0, ms[i].label, 14.0, 800, theme::TEXT, Anchor::Start);
+    let mut kpis: Vec<(String, String, String)> = order.iter().take(3).map(|&i| {
         let rank = pool.iter().filter(|q| measures(q)[i].value > ms[i].value).count() + 1;
-        s.t(x, 292.0, &format!("{} of {} in the pool", rank, n_pool), 12.0, 400, theme::MUTED, Anchor::Start);
+        (ms[i].display.clone(), ms[i].label.to_string(), format!("{} of {} in pool", rank, n_pool))
+    }).collect();
+    kpis.push((format!("{:.0}", p.minutes), "Minutes played".into(), String::new()));
+    let (cw, ch, gap) = ((PW - 40.0 - 12.0) / 2.0, 118.0, 12.0);
+    for (k, (v, l, r)) in kpis.iter().enumerate() {
+        let x = 20.0 + (k % 2) as f64 * (cw + gap);
+        let yy = y + (k / 2) as f64 * (ch + gap);
+        s.rrect(x, yy, cw, ch, 16.0, CARD, "none", 0.0);
+        s.h(x + 18.0, yy + 56.0, v, 54.0, if k < 3 { SAGE } else { PAPER }, Anchor::Start);
+        s.t(x + 18.0, yy + 82.0, l, 14.0, 600, PAPER, Anchor::Start);
+        if !r.is_empty() {
+            s.rrect(x + 18.0, yy + 90.0, 112.0, 20.0, 10.0, CARD_HI, "none", 0.0);
+            s.t(x + 74.0, yy + 104.0, r, 11.5, 500, SOFT, Anchor::Middle);
+        }
     }
-    s.h(980.0, 240.0, &format!("{:.0}", p.minutes), 64.0, theme::MUTED, Anchor::Start);
-    s.t(980.0, 270.0, "MINUTES", 14.0, 800, theme::TEXT, Anchor::Start);
-    // ring
-    let (cx, cy, r0, r1) = (320.0, 590.0, 40.0, 210.0);
+    y += 2.0 * ch + gap + 34.0;
+
+    // ---- percentile ring (team colour is the wedge fill only)
+    s.t(24.0, y, "Percentile ring", 17.0, 700, PAPER, Anchor::Start);
+    y += 28.0;
+    let (cx, cy, r0, r1) = (PW / 2.0, y + 190.0, 34.0, 132.0);
     let n = ms.len();
     for i in 0..n {
         let a0 = -std::f64::consts::FRAC_PI_2 + i as f64 / n as f64 * std::f64::consts::TAU + 0.02;
@@ -662,90 +721,125 @@ pub fn player_card(c: &Ctx, p: &PlayerStats) -> Board {
             d.push_str(&format!(" L {:.1} {:.1} Z", cx + r0 * a1.cos(), cy + r0 * a1.sin()));
             d
         };
-        s.path(&wedge(r1), "#16121c", "#2a2633", 1.0, "");
+        s.path(&wedge(r1), CARD, HAIR, 1.0, "");
         let rr = r0 + (r1 - r0) * pcts[i] / 100.0;
-        s.tip = Some(format!("{}: {} · percentile {:.0} (pool average {:.0})", ms[i].label.to_lowercase(), ms[i].display, pcts[i], pool_avg[i]));
-        s.path(&wedge(rr), &col, "none", 0.0, r#"opacity="0.9""#);
+        s.tip = Some(format!("{}: {} · percentile {:.0} (pool average {:.0})", ms[i].label, ms[i].display, pcts[i], pool_avg[i]));
+        s.path(&wedge(rr), &col, "none", 0.0, r#"opacity="0.95""#);
         let ra = r0 + (r1 - r0) * pool_avg[i] / 100.0;
         let pts: Vec<(f64, f64)> = (0..=12).map(|k| {
             let a = a0 + (a1 - a0) * k as f64 / 12.0;
             (cx + ra * a.cos(), cy + ra * a.sin())
         }).collect();
-        s.polyline(&pts, "#9a98a6", 2.0, "");
+        s.polyline(&pts, "#A3B3AA", 2.0, "");
+        // labels sit outside the ring, anchored away from the centre so they never cross it
         let am = (a0 + a1) / 2.0;
-        let (lx, ly) = (cx + (r1 + 46.0) * am.cos(), cy + (r1 + 46.0) * am.sin());
-        s.t(lx, ly - 8.0, ms[i].label, 11.0, 800, theme::TEXT, Anchor::Middle);
-        s.t(lx, ly + 10.0, &ms[i].display, 13.0, 800, if order[0] == i || order[1] == i || order[2] == i { &col } else { theme::TEXT }, Anchor::Middle);
+        let (lx, ly) = (cx + (r1 + 16.0) * am.cos(), cy + (r1 + 16.0) * am.sin());
+        let anchor = if am.cos() > 0.3 { Anchor::Start } else if am.cos() < -0.3 { Anchor::End } else { Anchor::Middle };
+        let dy = if am.sin() < -0.5 { -22.0 } else if am.sin() > 0.5 { 14.0 } else { -4.0 };
+        let is_top = order.iter().take(3).any(|&o| o == i);
+        s.t(lx, ly + dy, ms[i].label, 12.0, 600, PAPER, anchor);
+        s.t(lx, ly + dy + 15.0, &ms[i].display, 13.0, 800, if is_top { SAGE } else { SOFT }, anchor);
     }
+    y = cy + r1 + 62.0;
     let weakest = *order.last().unwrap();
-    s.t(cx, cy + r1 + 90.0, &pool_note, 12.0, 400, theme::MUTED, Anchor::Middle);
-    s.t(cx, cy + r1 + 110.0, &format!("Short wedge: {} at {:.0}, where this performance differed most from his pool", ms[weakest].label.to_lowercase(), pcts[weakest]), 12.0, 400, theme::MUTED, Anchor::Middle);
-    // map
-    s.t(1080.0, 360.0, "Where he had the ball, and where he defended", 18.0, 600, theme::TEXT, Anchor::Middle);
-    let pm = Pitch::right(680.0, 380.0, 820.0, 520.0);
+    for l in wrap_text(&pool_note, 12.5, PW - 48.0) {
+        s.t(24.0, y, &l, 12.5, 400, SOFT, Anchor::Start);
+        y += 17.0;
+    }
+    y += 4.0;
+    for l in wrap_text(&format!("Shortest wedge: {} at percentile {:.0}, where this performance differed most from the pool.", ms[weakest].label.to_lowercase(), pcts[weakest]), 12.5, PW - 48.0) {
+        s.t(24.0, y, &l, 12.5, 400, SOFT, Anchor::Start);
+        y += 17.0;
+    }
+    y += 26.0;
+
+    // ---- touch map
+    s.t(24.0, y, "Where he had the ball and where he defended", 17.0, 700, PAPER, Anchor::Start);
+    y += 18.0;
+    let pm = Pitch::right(20.0, y, PW - 40.0, 410.0);
     let ev = &c.m.events;
     let mine: Vec<&Event> = ev.iter().filter(|e| e.player == Some(p.id) && e.side == sd).collect();
     let touches: Vec<(f64, f64)> = mine.iter().filter(|e| e.kind.is_on_ball() && !matches!(e.kind, Kind::Foul)).map(|e| (e.x, e.y)).collect();
     kde(&mut s, &pm, &touches, &c.th.semantic.touch, 6.0, 0.6);
     pm.draw(&mut s);
     for e in &mine {
-        let (x, y) = pm.p(e.x, e.y);
+        let (x, yy) = pm.p(e.x, e.y);
         if matches!(e.kind, Kind::Tackle | Kind::Interception | Kind::Recovery | Kind::Clearance | Kind::Block | Kind::Challenge) {
-            s.diamond(x, y, 6.0, &c.th.semantic.defending, "#000", 0.8);
+            s.diamond(x, yy, 6.5, &c.th.semantic.defending, "#000", 0.8);
         } else if e.kind == Kind::Shot {
-            s.star(x, y, 9.0, "#ffffff", "none");
+            s.star(x, yy, 10.0, "#ffffff", "none");
         } else if e.kind.is_on_ball() {
-            s.circle(x, y, 2.4, "#ffffff", "none", 0.0, r#"opacity="0.7""#);
+            s.circle(x, yy, 2.6, "#ffffff", "none", 0.0, r#"opacity="0.75""#);
         }
         if e.kind == Kind::Pass && e.success {
             let (ex, ey) = e.end();
             let into_box = !crate::derive::in_box(e.x, e.y) && crate::derive::in_box(ex, ey);
             let (a2, b2) = pm.p(ex, ey);
             if into_box {
-                s.arrow(x, y, a2, b2, "#ffffff", 2.2, 9.0, "");
+                s.arrow(x, yy, a2, b2, "#ffffff", 2.4, 9.0, "");
             } else if ex - e.x >= 15.0 {
-                s.line(x, y, a2, b2, "#cfcdd8", 1.0, r#"opacity="0.6""#);
+                s.line(x, yy, a2, b2, "#cfcdd8", 1.2, r#"opacity="0.6""#);
             }
         }
     }
     if p.def_height > 0.0 {
         let (hx, _) = pm.p(p.def_height, 0.0);
-        s.line(hx, pm.y0, hx, pm.y0 + pm.h, &c.th.semantic.defending, 1.5, r#"stroke-dasharray="6 4""#);
+        s.line(hx, pm.y0, hx, pm.y0 + pm.h, &c.th.semantic.defending, 1.8, r#"stroke-dasharray="6 4""#);
     }
-    let mut lx = 690.0;
-    lx = legend_item(&mut s, lx, 935.0, "square", &c.th.semantic.touch, "touch density");
-    lx = legend_item(&mut s, lx, 935.0, "circle", "#ffffff", "a touch");
-    lx = legend_item(&mut s, lx, 935.0, "diamond", &c.th.semantic.defending, "defending");
-    lx = legend_item(&mut s, lx, 935.0, "dash", &c.th.semantic.defending, "defensive height");
-    legend_item(&mut s, lx, 935.0, "star", "#ffffff", "shot");
+    y = pm.y0 + pm.h + 22.0;
+    // legend as wrapped pills
+    let items: [(&str, &str, String); 5] = [("square", "Touch density", c.th.semantic.touch.clone()), ("circle", "Touch", "#ffffff".into()), ("diamond", "Defending", c.th.semantic.defending.clone()), ("dash", "Defensive height", c.th.semantic.defending.clone()), ("star", "Shot", "#ffffff".into())];
+    let (mut lx, mut ly) = (20.0, y);
+    for (kind, label, colr) in items.iter() {
+        let w = 12.0 + 22.0 + text_w(label, 12.5, false) + 12.0;
+        if lx + w > PW - 20.0 {
+            lx = 20.0;
+            ly += 42.0;
+        }
+        s.rrect(lx, ly, w, 32.0, 16.0, CARD_HI, "none", 0.0);
+        let _ = legend_item(&mut s, lx + 12.0, ly + 21.0, kind, colr, label);
+        lx += w + 12.0;
+    }
+    y = ly + 32.0 + 30.0;
+
+    // ---- tactical snapshot: three mini stats, then the averages
+    s.t(24.0, y, "Tactical snapshot", 17.0, 700, PAPER, Anchor::Start);
+    y += 16.0;
     let n_def = mine.iter().filter(|e| matches!(e.kind, Kind::Tackle | Kind::Interception | Kind::Recovery | Kind::Clearance | Kind::Block | Kind::Challenge)).count();
-    let avg_up = p.avg_x;
+    let tw = (PW - 40.0 - 24.0) / 3.0;
+    for (k, (v, l)) in [(p.touches_by_third[0], "Defensive third"), (p.touches_by_third[1], "Middle third"), (p.touches_by_third[2], "Final third")].iter().enumerate() {
+        let x = 20.0 + k as f64 * (tw + 12.0);
+        s.rrect(x, y, tw, 76.0, 16.0, CARD, "none", 0.0);
+        s.h(x + 16.0, y + 40.0, &v.to_string(), 32.0, PAPER, Anchor::Start);
+        s.t(x + 16.0, y + 62.0, l, 12.5, 500, SOFT, Anchor::Start);
+    }
+    y += 76.0 + 12.0;
     let lr = p.avg_y - 34.0;
-    s.t(690.0, 965.0, &format!("TACTICAL SNAPSHOT  Touches by third · defensive / middle / final {} / {} / {} · average touch {:.0} m upfield, {:.0} m {} of centre · {} defensive actions", p.touches_by_third[0], p.touches_by_third[1], p.touches_by_third[2], avg_up, lr.abs(), if lr >= 0.0 { "left" } else { "right" }, n_def), 11.5, 500, theme::MUTED, Anchor::Start);
-    // stat columns
-    let cols: Vec<(&str, Vec<(String, String)>)> = match role {
+    s.rrect(20.0, y, PW - 40.0, 76.0, 16.0, CARD, "none", 0.0);
+    s.t(36.0, y + 30.0, "Average touch", 12.5, 500, SOFT, Anchor::Start);
+    s.t(36.0, y + 54.0, &format!("{:.0} m upfield, {:.0} m {} of centre", p.avg_x, lr.abs(), if lr >= 0.0 { "left" } else { "right" }), 16.0, 700, PAPER, Anchor::Start);
+    s.t(PW - 36.0, y + 30.0, "Defensive actions", 12.5, 500, SOFT, Anchor::End);
+    s.h(PW - 36.0, y + 60.0, &n_def.to_string(), 30.0, PAPER, Anchor::End);
+    y += 76.0 + 34.0;
+
+    // ---- grouped stat sections
+    type Group = (&'static str, Vec<(String, String)>);
+    let groups: Vec<Group> = match role {
         Role::Goalkeeper => vec![
-            ("SHOT STOPPING", vec![("Saves".into(), p.saves.to_string()), ("Claims".into(), p.claims.to_string()), ("Sweeps".into(), p.sweeps.to_string())]),
-            ("DISTRIBUTION", vec![("Passes".into(), format!("{} ({:.0}%)", p.passes, if p.passes > 0 { p.passes_completed as f64 / p.passes as f64 * 100.0 } else { 0.0 })), ("Progressive passes".into(), p.progressive_passes.to_string()), ("Progression metres".into(), format!("{:.0}", p.progression_m))]),
-            ("INVOLVEMENT", vec![("Touches".into(), p.touches.to_string()), ("xGChain".into(), format!("{:.2}", p.xgchain)), ("VAEP".into(), signed(p.vaep_off + p.vaep_def, 2))]),
+            ("Shot stopping", vec![("Saves".into(), p.saves.to_string()), ("Claims".into(), p.claims.to_string()), ("Sweeps".into(), p.sweeps.to_string())]),
+            ("Distribution", vec![("Passes".into(), format!("{} ({:.0}%)", p.passes, if p.passes > 0 { p.passes_completed as f64 / p.passes as f64 * 100.0 } else { 0.0 })), ("Progressive passes".into(), p.progressive_passes.to_string()), ("Progression metres".into(), format!("{:.0}", p.progression_m))]),
+            ("Involvement", vec![("Touches".into(), p.touches.to_string()), ("xGChain".into(), format!("{:.2}", p.xgchain)), ("VAEP".into(), signed(p.vaep_off + p.vaep_def, 2))]),
         ],
-        _ => {
-            let on_ball = vec![
+        _ => vec![
+            ("Possession and passing", vec![
                 ("Touches".to_string(), p.touches.to_string()),
                 ("Passes".into(), format!("{} ({:.0}%)", p.passes, if p.passes > 0 { p.passes_completed as f64 / p.passes as f64 * 100.0 } else { 0.0 })),
                 ("Progressive passes".into(), p.progressive_passes.to_string()),
                 ("Line-breaking passes".into(), p.line_breaks.to_string()),
                 ("Take-ons won".into(), format!("{} of {}", p.take_ons.0, p.take_ons.1)),
                 ("Dispossessed".into(), p.dispossessed.to_string()),
-            ];
-            let defending = vec![
-                ("Recoveries".to_string(), p.recoveries.to_string()),
-                ("Interceptions".into(), p.interceptions.to_string()),
-                ("Tackles won".into(), p.tackles_won.to_string()),
-                ("Dribbled past".into(), p.dribbled_past.to_string()),
-                ("Aerials won".into(), format!("{} of {}", p.aerials.0, p.aerials.1)),
-            ];
-            let threat = vec![
+            ]),
+            ("Chance creation and shooting", vec![
                 ("Shots".to_string(), p.shots.to_string()),
                 ("xG".into(), format!("{:.2}", p.xg)),
                 ("Inferred xA".into(), format!("{:.2}", p.inferred_xa)),
@@ -753,28 +847,43 @@ pub fn player_card(c: &Ctx, p: &PlayerStats) -> Board {
                 ("Final-third receptions".into(), p.ft_receptions.to_string()),
                 ("Positive xT".into(), format!("{:.2}", p.positive_xt)),
                 ("xGBuildup".into(), format!("{:.2}", p.xgbuildup)),
-            ];
-            match role {
-                Role::Defender => vec![("ON THE BALL", on_ball), ("DEFENDING", defending), ("THREAT", threat)],
-                Role::Midfielder => vec![("ON THE BALL", on_ball), ("CREATION", threat), ("WITHOUT THE BALL", defending)],
-                _ => vec![("THREAT", threat), ("ON THE BALL", on_ball), ("WITHOUT THE BALL", defending)],
-            }
-        }
+            ]),
+            ("Defending", vec![
+                ("Recoveries".to_string(), p.recoveries.to_string()),
+                ("Interceptions".into(), p.interceptions.to_string()),
+                ("Tackles won".into(), p.tackles_won.to_string()),
+                ("Dribbled past".into(), p.dribbled_past.to_string()),
+                ("Aerials won".into(), format!("{} of {}", p.aerials.0, p.aerials.1)),
+            ]),
+        ],
     };
-    for (k, (title, rows)) in cols.iter().enumerate() {
-        let x = 60.0 + k as f64 * 500.0;
-        s.h(x, 1040.0, title, 24.0, theme::TEXT, Anchor::Start);
-        s.line(x, 1052.0, x + 460.0, 1052.0, &col, 2.0, "");
+    for (k, (title, rows)) in groups.iter().enumerate() {
+        let h = 62.0 + rows.len() as f64 * 40.0 + 10.0;
+        s.rrect(20.0, y, PW - 40.0, h, 20.0, CARD, "none", 0.0);
+        s.t(38.0, y + 30.0, &format!("No. {:02}", k + 1), 12.5, 500, SAGE, Anchor::Start);
+        s.t(PW - 38.0, y + 30.0, &format!("{:02} — {:02}", k + 1, groups.len()), 12.5, 500, SOFT, Anchor::End);
+        s.t(38.0, y + 54.0, title, 19.0, 700, PAPER, Anchor::Start);
         for (i, (l, v)) in rows.iter().enumerate() {
-            let y = 1086.0 + i as f64 * 32.0;
-            s.t(x, y, l, 14.0, 400, theme::TEXT, Anchor::Start);
-            s.t(x + 460.0, y, v, 14.0, 800, theme::TEXT, Anchor::End);
-            s.line(x, y + 11.0, x + 460.0, y + 11.0, theme::LINE, 1.0, "");
+            let yy = y + 62.0 + 24.0 + i as f64 * 40.0;
+            s.line(38.0, yy - 16.0, PW - 38.0, yy - 16.0, HAIR, 1.0, "");
+            s.t(38.0, yy + 4.0, l, 15.0, 400, PAPER, Anchor::Start);
+            s.t(PW - 38.0, yy + 4.0, v, 15.0, 800, PAPER, Anchor::End);
         }
+        y += h + 16.0;
     }
-    s.t(60.0, 1340.0, "Raw match totals; unavailable values show as N/A. PAdj defensive actions: tackles, interceptions, recoveries, clearances, challenges and blocks per 100 opponent touches.", 11.5, 400, theme::GREY, Anchor::Start);
-    s.t(60.0, 1360.0, "Defensive height: mean x of those actions. Progression metres: forward distance of completed passes and carries. xGChain: possession xG credited to every player involved; xGBuildup excludes shooter and key passer.", 11.5, 400, theme::GREY, Anchor::Start);
-    footer(&mut s, c, "Role and minutes govern comparisons; these are match observations, not a season ability rating. Nominal pitch 105 × 68 m.");
+    y += 6.0;
+    for note in ["Raw match totals; unavailable values show as N/A. PAdj defensive actions are tackles, interceptions, recoveries, clearances, challenges and blocks per 100 opponent touches.", "Defensive height is the mean x of those actions. Progression metres are the forward distance of completed passes and carries. xGChain credits possession xG to every player involved; xGBuildup leaves out the shooter and key passer."] {
+        for l in wrap_text(note, 11.5, PW - 48.0) {
+            s.t(24.0, y, &l, 11.5, 400, SOFT, Anchor::Start);
+            y += 16.0;
+        }
+        y += 6.0;
+    }
+    y += 24.0;
+    // the how-to-read line lives in the viewer's Info sheet
+    s.how = "Role and minutes govern comparisons; these are match observations, not a season ability rating. Nominal pitch 105 × 68 m.".to_string();
+    s.h = y;
+    s.scene.h = y as f32;
     Board::new(&format!("31_player_{}_{}", side_tag(sd), p.id), "Player card", s)
 }
 
