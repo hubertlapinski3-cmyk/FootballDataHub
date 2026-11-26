@@ -14,6 +14,8 @@ pub struct Ctx<'a> {
     pub creator: String,
     pub logo: Option<String>,
     pub footer_tag: String,
+    /// Season scouting index (all leagues): when present, player cards rank against its role pools.
+    pub scout: Option<&'a crate::catalog::ScoutIndex>,
 }
 
 impl<'a> Ctx<'a> {

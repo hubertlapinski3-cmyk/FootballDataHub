@@ -1,6 +1,8 @@
 //! The eight screens of the Data Hub app.
 
 pub mod browse;
+mod scout;
+pub use scout::SCOUT_KEY;
 mod viewer;
 
 use crate::library::{self, Entry};
@@ -418,6 +420,7 @@ fn step_text(step: &str, detail: &str) -> String {
         "render" => "Drawing boards…".into(),
         "report" => "Writing the report…".into(),
         "done" => "Open it from Latest built matches".into(),
+        "download" => format!("Downloading match · {detail}"),
         "queued" => "Starting…".into(),
         other => other.to_string(),
     }

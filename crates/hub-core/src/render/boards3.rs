@@ -687,24 +687,53 @@ pub fn player_card(c: &Ctx, p: &PlayerStats) -> Board {
     let sd = p.side.unwrap();
     let col = c.col(sd).to_string();
     let role = p.role.unwrap_or(Role::Midfielder);
-    // peer pool: same role, 30+ min, at least 4 others; else all 30+ min players
+    // peer pool: with the season scouting index, same-role players of all leagues (season per 90);
+    // else same role in this match, 30+ min, at least 4 others; else all 30+ min players
+    let ms = measures(p);
+    let scout_role = c.m.team(sd).player(p.id).map(|pl| crate::catalog::ScoutRole::from_position(&pl.position, role)).unwrap_or(match role {
+        Role::Goalkeeper => crate::catalog::ScoutRole::GK,
+        Role::Defender => crate::catalog::ScoutRole::CB,
+        Role::Midfielder => crate::catalog::ScoutRole::CM,
+        Role::Forward => crate::catalog::ScoutRole::FW,
+    });
+    // season values of every measure's pool, plus the player's own value in season units
+    let season: Option<(Vec<Vec<f64>>, Vec<f64>)> = c.scout.filter(|ix| ix.players.len() >= 20).and_then(|ix| {
+        let mut pools = vec![];
+        let mut own = vec![];
+        for m in &ms {
+            let k = crate::catalog::metric_index(m.label)?;
+            pools.push(ix.role_values(scout_role, m.label, ix.pool_minutes, 20));
+            own.push(crate::catalog::season_unit(k, m.value, p.minutes.max(1.0)));
+        }
+        (pools.iter().all(|v| v.len() >= 5)).then_some((pools, own))
+    });
     let same: Vec<&PlayerStats> = c.a.players.iter().filter(|q| q.minutes >= 30.0 && q.role == Some(role)).collect();
-    let (pool, pool_note) = if same.len() >= 5 {
+    let (pool, pool_note) = if let Some((pools, _)) = &season {
+        (vec![], format!("Ranked against {} {} players with {:.0}+ minutes across the seven leagues this season, as per-90 figures. The grey ring marks the pool average.", pools[0].len(), scout_role.label(), c.scout.map(|i| i.pool_minutes).unwrap_or(270.0)))
+    } else if same.len() >= 5 {
         (same, format!("Ranked against {} players in the same role (30+ min). The grey ring marks the pool average.", c.a.players.iter().filter(|q| q.minutes >= 30.0 && q.role == Some(role)).count() - 1))
     } else {
         let all: Vec<&PlayerStats> = c.a.players.iter().filter(|q| q.minutes >= 30.0).collect();
         let n = all.len();
         (all, format!("Ranked against all {} players over 30 minutes (fewer than 4 peers in role). The grey ring marks the pool average.", n))
     };
-    let ms = measures(p);
-    let pcts: Vec<f64> = ms.iter().enumerate().map(|(i, m)| {
-        let pv: Vec<f64> = pool.iter().filter(|q| q.id != p.id).map(|q| measures(q)[i].value).collect();
-        percentile(m.value, &pv)
+    let pcts: Vec<f64> = ms.iter().enumerate().map(|(i, m)| match &season {
+        Some((pools, own)) => crate::catalog::percentile(own[i], &pools[i]),
+        None => {
+            let pv: Vec<f64> = pool.iter().filter(|q| q.id != p.id).map(|q| measures(q)[i].value).collect();
+            percentile(m.value, &pv)
+        }
     }).collect();
-    let pool_avg: Vec<f64> = (0..ms.len()).map(|i| {
-        let pv: Vec<f64> = pool.iter().map(|q| measures(q)[i].value).collect();
-        let avg = pv.iter().sum::<f64>() / pv.len().max(1) as f64;
-        percentile(avg, &pv)
+    let pool_avg: Vec<f64> = (0..ms.len()).map(|i| match &season {
+        Some((pools, _)) => {
+            let avg = pools[i].iter().sum::<f64>() / pools[i].len().max(1) as f64;
+            crate::catalog::percentile(avg, &pools[i])
+        }
+        None => {
+            let pv: Vec<f64> = pool.iter().map(|q| measures(q)[i].value).collect();
+            let avg = pv.iter().sum::<f64>() / pv.len().max(1) as f64;
+            percentile(avg, &pv)
+        }
     }).collect();
 
     // ---- hero: the player once, then the scoreboard pill
@@ -729,9 +758,15 @@ pub fn player_card(c: &Ctx, p: &PlayerStats) -> Board {
     // ---- 2x2 key figures: three strongest measures and minutes
     let mut order: Vec<usize> = (0..ms.len()).collect();
     order.sort_by(|a, b| ((ms[*b].value > 0.0) as u8).cmp(&((ms[*a].value > 0.0) as u8)).then(pcts[*b].partial_cmp(&pcts[*a]).unwrap()));
-    let n_pool = pool.len();
+    let n_pool = match &season {
+        Some((pools, _)) => pools[0].len(),
+        None => pool.len(),
+    };
     let mut kpis: Vec<(String, String, String)> = order.iter().take(3).map(|&i| {
-        let rank = pool.iter().filter(|q| measures(q)[i].value > ms[i].value).count() + 1;
+        let rank = match &season {
+            Some((pools, own)) => pools[i].iter().filter(|v| **v > own[i]).count() + 1,
+            None => pool.iter().filter(|q| measures(q)[i].value > ms[i].value).count() + 1,
+        };
         (ms[i].display.clone(), ms[i].label.to_string(), format!("{} of {} in pool", rank, n_pool))
     }).collect();
     kpis.push((format!("{:.0}", p.minutes), "Minutes played".into(), String::new()));

@@ -177,7 +177,12 @@ fn main() {
     let out = PathBuf::from(args.get(2).cloned().unwrap_or("shots".into()));
     std::fs::create_dir_all(&out).unwrap();
     let ctx = egui::Context::default();
+    // the bundled multi-league fixture stands in for the published catalog and scouting index (no network)
+    std::fs::create_dir_all(root.join("catalog")).unwrap();
+    std::fs::write(root.join("catalog/catalog.json"), include_bytes!("../../../hub-core/tests/fixtures/scout/catalog.json")).unwrap();
+    std::fs::write(root.join("catalog/scout_index.json"), include_bytes!("../../../hub-core/tests/fixtures/scout/scout_index.json")).unwrap();
     let mut app = App::new(&ctx, root.clone());
+    app.data.refresh_started = true;
     if app.lib.entries.is_empty() {
         eprintln!("building sample match…");
         library::build_match(&root, Source::Sample, false, None, None, Default::default()).expect("sample build");
@@ -266,6 +271,41 @@ fn main() {
     h.shot(&o("7b_compare_players.png"), 0.0);
     h.shot(&o("7c_compare_players_bars.png"), 900.0);
     h.app.compare.players_mode = false;
+    // league browser and league scout (fixture data)
+    h.app.data.league = 1;
+    h.app.stack = vec![Screen::Home, Screen::Matches];
+    h.shot(&o("15_matches_leagues.png"), 0.0);
+    h.app.data.league = 8;
+    h.app.stack = vec![Screen::Home, Screen::Matches];
+    h.shot(&o("15b_matches_ekstraklasa.png"), 0.0);
+    h.app.data.league = 2;
+    h.app.stack = vec![Screen::Home];
+    h.shot(&o("16_home_leagues.png"), 1100.0);
+    h.app.data.league = 0;
+    h.app.data.scout_on = true;
+    h.app.stack = vec![Screen::Home, Screen::Players(sample)];
+    h.shot(&o("17_players_scout.png"), 0.0);
+    h.app.data.s_role = 1; // FW
+    h.app.data.s_league = 1; // Top 5
+    h.shot(&o("17b_scout_filtered.png"), 0.0);
+    h.app.data.s_role = 0;
+    h.app.data.s_league = 0;
+    h.app.data.scout_on = false;
+    let ix = h.app.data.index.clone().unwrap();
+    let pick = |league: &str| ix.players.iter().filter(|p| p.league == league && p.role == Some(matchhub::catalog::ScoutRole::FW) && p.minutes >= 270.0).max_by(|a, b| a.xg90().partial_cmp(&b.xg90()).unwrap()).unwrap().id;
+    let (ek, pl) = (pick("ekstraklasa"), pick("premier-league"));
+    h.app.stack = vec![Screen::Home, Screen::Players(sample), Screen::ScoutPlayer(ek)];
+    h.shot(&o("18_scout_player.png"), 0.0);
+    h.shot(&o("18b_scout_player_pitch.png"), 1500.0);
+    h.app.compare.players_mode = true;
+    h.app.compare.pl_left = Some((usize::MAX, ek));
+    h.app.compare.pl_right = Some((usize::MAX, pl));
+    h.app.stack = vec![Screen::Home, Screen::Compare];
+    h.shot(&o("19_compare_cross_league.png"), -5000.0);
+    h.shot(&o("19b_compare_cross_league_bars.png"), 900.0);
+    h.app.compare.players_mode = false;
+    h.app.compare.pl_left = None;
+    h.app.compare.pl_right = None;
     h.app.stack = vec![Screen::Home, Screen::Settings];
     h.shot(&o("8_settings.png"), 0.0);
     h.app.stack = vec![Screen::Home, Screen::Matches];

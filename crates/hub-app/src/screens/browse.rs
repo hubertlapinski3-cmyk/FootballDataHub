@@ -2,6 +2,7 @@
 
 use super::{boards_by_section, STEPS};
 use crate::library::{self, Source};
+use matchhub::catalog::{format_metric, metric_index, percentile, season_unit, ScoutIndex, ScoutPlayerRow, ScoutRole, METRICS};
 use crate::style::*;
 use crate::{App, Screen};
 use egui::{Align, Color32, Layout, RichText, ScrollArea, Sense, Stroke, Ui, Vec2};
@@ -157,9 +158,18 @@ impl App {
                 if let Some(i) = open {
                     self.push(Screen::Hub(i));
                 }
+                section_title(ui, "Leagues", lt());
+                self.league_controls(ui, "home", false);
+                if self.data.league != 0 {
+                    ui.add_space(8.0);
+                    self.remote_list(ui, Some(3));
+                    if ghost(ui, "All matches", lt()) {
+                        self.push(Screen::Matches);
+                    }
+                }
                 section_title(ui, "Quick actions", lt());
                 let ncol = if ui.available_width() < 380.0 || self.prefs.text_scale > 115 { 2 } else { 4 };
-                let items = [("list", "Matches"), ("grid", "Boards"), ("compare", "Compare"), ("gear", "Settings")];
+                let items = [("list", "Matches"), ("scout", "Scout"), ("grid", "Boards"), ("compare", "Compare"), ("gear", "Settings")];
                 for chunk in items.chunks(ncol) {
                 ui.columns(ncol, |cols| {
                     for (k, (icon, label)) in chunk.iter().enumerate() {
@@ -180,6 +190,7 @@ impl App {
                                         self.push(Screen::Hub(0))
                                     }
                                 }
+                                "Scout" => self.push(Screen::Scout),
                                 "Compare" => self.push(Screen::Compare),
                                 _ => self.push(Screen::Settings),
                             }
@@ -218,6 +229,21 @@ impl App {
             }
             let mut open = None;
             let mut del = None;
+            self.league_controls(ui, "matches", true);
+            ui.add_space(8.0);
+            if self.data.league != 0 {
+                // league matches from the catalog: downloaded on demand, built on the device
+                ScrollArea::vertical().id_salt("remote_matches").show(ui, |ui| {
+                    ui.set_max_width(ui.available_width());
+                    if self.build.lock().unwrap().running {
+                        self.build_status(ui, lt());
+                        ui.add_space(8.0);
+                    }
+                    self.remote_list(ui, None);
+                    ui.add_space(24.0);
+                });
+                return;
+            }
             if self.lib.entries.is_empty() {
                 ui.add_space(40.0);
                 ui.vertical_centered(|ui| {
@@ -428,6 +454,19 @@ impl App {
         egui::Frame::new().inner_margin(egui::Margin::symmetric(12, 4)).show(ui, |ui| {
             if top_bar(ui, "Players", true) {
                 self.back();
+            }
+            // two tabs must both stay visible: the long labels give way to short ones at large text or on narrow screens
+            let short = ui.available_width() < 360.0 || text_scale_pct() > 125;
+            if let Some(i) = tab_row(ui, if short { &["Squad", "Scout"] } else { &["Match squad", "League scout"] }, self.data.scout_on as usize) {
+                self.data.scout_on = i == 1;
+            }
+            if self.data.scout_on {
+                ScrollArea::vertical().id_salt("players_scout").show(ui, |ui| {
+                    ui.set_max_width(ui.available_width());
+                    self.scout_view(ui);
+                    ui.add_space(24.0);
+                });
+                return;
             }
             ScrollArea::vertical().id_salt("players").show(ui, |ui| {
                 ui.set_max_width(ui.available_width()); // wrap to the viewport, never widen it
@@ -699,8 +738,17 @@ impl App {
 
     /// Two players side by side: pickers, a dual profile radar and grouped comparison bars.
     fn compare_players(&mut self, ui: &mut Ui) {
+        use super::scout::SCOUT_KEY;
+        let ix = self.data.index.clone();
         let all: Vec<(usize, library::PlayerMeta)> = self.lib.entries.iter().enumerate().flat_map(|(m, e)| e.s.players.iter().map(move |p| (m, p.clone()))).collect();
-        let find = |key: Option<(usize, u64)>| all.iter().find(|(m, p)| Some((*m, p.id)) == key).cloned();
+        // a pick is a built-match player (match index, player id) or a scouting-index player (SCOUT_KEY, id)
+        let find = |key: Option<(usize, u64)>| -> Option<CmpSrc> {
+            let (m, id) = key?;
+            if m == SCOUT_KEY {
+                return ix.as_ref()?.find(id).cloned().map(CmpSrc::Scout);
+            }
+            all.iter().find(|(mi, p)| *mi == m && p.id == id).map(|(mi, p)| CmpSrc::Match(*mi, p.clone()))
+        };
         // defaults: the most-used player on each side
         let top = |side: usize| all.iter().filter(|(_, p)| p.side == side).max_by(|a, b| a.1.minutes.total_cmp(&b.1.minutes)).map(|(m, p)| (*m, p.id));
         if find(self.compare.pl_left).is_none() {
@@ -709,36 +757,81 @@ impl App {
         if find(self.compare.pl_right).is_none() {
             self.compare.pl_right = top(1);
         }
-        let label = |p: &library::PlayerMeta| format!("#{} {} · {} ({:.0}')", p.shirt, p.name, p.role, p.minutes);
+        // league players: found by name or club, then offered in the pickers
+        let mut scout_hits: Vec<ScoutPlayerRow> = vec![];
+        if let Some(ixr) = &ix {
+            ui.label(RichText::new("Search league players").font(bold(12.0)).color(DARK_TEXT2));
+            ui.add_sized([ui.available_width() - 26.0, 48.0], egui::TextEdit::singleline(&mut self.data.c_query).hint_text(RichText::new("Name or club").color(DARK_TEXT2)).font(body(15.0)));
+            let q = self.data.c_query.trim().to_lowercase();
+            if q.len() >= 2 {
+                let mut hits: Vec<&ScoutPlayerRow> = ixr.players.iter().filter(|p| p.name.to_lowercase().contains(&q) || p.team.to_lowercase().contains(&q)).collect();
+                hits.sort_by(|a, b| b.minutes.partial_cmp(&a.minutes).unwrap());
+                scout_hits = hits.into_iter().take(25).cloned().collect();
+            }
+            ui.add_space(8.0);
+        }
+        let label_of = |s: &CmpSrc| match s {
+            CmpSrc::Match(_, p) => format!("#{} {} · {} ({:.0}')", p.shirt, p.name, p.role, p.minutes),
+            CmpSrc::Scout(r) => format!("{} · {} · {} ({:.0}')", r.short, r.team, role_text(r.role), r.minutes),
+        };
         for (k, title) in [(0usize, "Left player"), (1, "Right player")] {
             let cur = if k == 0 { self.compare.pl_left } else { self.compare.pl_right };
             let cur_p = find(cur);
-            let col = cur_p.as_ref().map(|(m, p)| self.team_col(*m, p.side)).unwrap_or(WHITE);
-            let text = cur_p.as_ref().map(|(_, p)| label(p)).unwrap_or_default();
+            let col = match &cur_p {
+                Some(CmpSrc::Match(m, p)) => self.team_col(*m, p.side),
+                _ => if k == 0 { SAGE } else { WHITE },
+            };
+            let text = cur_p.as_ref().map(&label_of).unwrap_or_default();
             ui.label(RichText::new(title).font(bold(12.0)).color(DARK_TEXT2));
             egui::ComboBox::from_id_salt(("cmpp", k)).selected_text(RichText::new(text).color(col)).width(ui.available_width()).show_ui(ui, |ui| {
                 for (m, p) in &all {
                     let key = Some((*m, p.id));
-                    if ui.selectable_label(key == cur, label(p)).clicked() {
-                        if k == 0 {
-                            self.compare.pl_left = key;
-                        } else {
-                            self.compare.pl_right = key;
-                        }
+                    if ui.selectable_label(key == cur, label_of(&CmpSrc::Match(*m, p.clone()))).clicked() {
+                        if k == 0 { self.compare.pl_left = key } else { self.compare.pl_right = key }
+                    }
+                }
+                for r in &scout_hits {
+                    let key = Some((SCOUT_KEY, r.id));
+                    if ui.selectable_label(key == cur, label_of(&CmpSrc::Scout(r.clone()))).clicked() {
+                        if k == 0 { self.compare.pl_left = key } else { self.compare.pl_right = key }
                     }
                 }
             });
         }
         let (Some(l), Some(r)) = (find(self.compare.pl_left), find(self.compare.pl_right)) else { return };
-        let (cl, cr) = (self.team_col(l.0, l.1.side), self.team_col(r.0, r.1.side));
+        // team colours for match players; league players take the two accents
+        let colour = |s: &CmpSrc, slot: usize| match s {
+            CmpSrc::Match(m, p) => self.team_col(*m, p.side),
+            CmpSrc::Scout(_) => if slot == 0 { SAGE } else { WHITE },
+        };
+        let (cl, cr) = (colour(&l, 0), colour(&r, 1));
+        let (pl, pr) = (CmpP::new(&l), CmpP::new(&r));
         ui.add_space(8.0);
-        versus_header(ui, &l.1.short, cl, &r.1.short, cr, 20.0);
-        section_title(ui, "Profile per 90 minutes", true);
-        dual_radar(ui, &l.1, &r.1, cl, cr);
+        versus_header(ui, &pl.short, cl, &pr.short, cr, 20.0);
+        // radar: role percentiles of the season pool when there is a scouting index, else per 90 on a shared scale
+        let (fa, fb, pct_mode) = match &ix {
+            Some(ixr) => (pl.fractions(ixr), pr.fractions(ixr), true),
+            None => {
+                let (va, vb) = (pl.axis_values(), pr.axis_values());
+                let max: Vec<f64> = (0..8).map(|i| if i == 4 { 1.0 } else { va[i].max(vb[i]).max(1e-9) }).collect();
+                let f = |v: [f64; 8]| -> [f64; 8] { std::array::from_fn(|i| (v[i] / max[i]).clamp(0.0, 1.0)) };
+                (f(va), f(vb), false)
+            }
+        };
+        section_title(ui, if pct_mode { "Role percentile per 90" } else { "Profile per 90 minutes" }, true);
+        dual_radar(ui, [&format!("{} · {}", pl.short, pl.role_text), &format!("{} · {}", pr.short, pr.role_text)], fa, fb, cl, cr);
+        let both_match = matches!((&l, &r), (CmpSrc::Match(..), CmpSrc::Match(..)));
+        if !both_match {
+            ui.label(RichText::new("All figures are per 90 minutes").font(body(12.0)).color(DARK_TEXT2));
+        }
         let groups = ["Attacking & Shooting", "Passing & Progression", "Involvement & Defending"];
         for (g, name) in groups.iter().enumerate() {
             section_title(ui, name, true);
-            for (label, a, b, fa, fb) in group_rows(&l.1, &r.1, g) {
+            let rows = match (&l, &r) {
+                (CmpSrc::Match(_, a), CmpSrc::Match(_, b)) => group_rows(a, b, g),
+                _ => group_rows_per90(&pl.vals, &pr.vals, g),
+            };
+            for (label, a, b, fa, fb) in rows {
                 let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width() - 26.0, 68.0), Sense::hover());
                 let p = ui.painter();
                 let tot = (fa + fb).max(1e-9) as f32;
@@ -839,6 +932,24 @@ impl App {
                     if ghost(ui, "Save relay", lt()) {
                         self.save_prefs();
                         self.toast(ui.ctx(), if self.prefs.relay().is_some() { "Relay saved" } else { "Relay disabled (enter owner/name)" });
+                    }
+                });
+                section_title(ui, "League data", lt());
+                card(lt()).show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.label(RichText::new("The nightly job publishes a catalog of the seven leagues and a season scouting index to the data-catalog branch of the repository above. The app reads it with the same token; matches are downloaded one at a time when you open them.").font(body(12.0)).color(sub()));
+                    let (matches, players) = (self.data.catalog.as_ref().map(|c| c.total_matches()).unwrap_or(0), self.data.index.as_ref().map(|i| i.players.len()).unwrap_or(0));
+                    ui.label(RichText::new(format!("{matches} matches · {players} players cached")).font(semi(13.0)).color(fg()));
+                    let (running, err) = {
+                        let j = self.data.job.lock().unwrap();
+                        (j.running, j.error.clone())
+                    };
+                    if let Some(e) = err {
+                        ui.label(RichText::new(e.chars().take(200).collect::<String>()).font(body(12.0)).color(sub()));
+                    }
+                    if ghost(ui, if running { "Updating" } else { "Refresh now" }, lt()) && !running {
+                        let ctx = ui.ctx().clone();
+                        self.refresh_data(&ctx);
                     }
                 });
                 section_title(ui, "Theme", lt());
@@ -999,6 +1110,11 @@ pub fn draw_icon_col(ui: &Ui, r: egui::Rect, kind: &str, colr: Color32) {
                 p.line_segment([egui::pos2(r.left() + 11.0, y), egui::pos2(r.right() - 2.0, y)], st);
             }
         }
+        "scout" => {
+            // magnifier: lens and handle
+            p.circle_stroke(egui::pos2(c.x - 2.0, c.y - 2.0), 7.0, st);
+            p.line_segment([egui::pos2(c.x + 3.0, c.y + 3.0), egui::pos2(r.right() - 3.0, r.bottom() - 3.0)], st);
+        }
         "grid" => {
             for (dx, dy) in [(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (1.0, 1.0)] {
                 let a = egui::pos2(r.left() + 3.0 + dx * 12.0, r.top() + 3.0 + dy * 12.0);
@@ -1055,20 +1171,86 @@ fn versus_header(ui: &mut Ui, left: &str, lc: Color32, right: &str, rc: Color32,
     ui.painter().text(rect.right_top(), egui::Align2::RIGHT_TOP, right, head(size * k), rc);
 }
 
-/// Per-90 profile on eight axes; pass completion is already a ratio.
-fn profile(p: &library::PlayerMeta) -> [f64; 8] {
-    let e = p.extra.clone().unwrap_or_default();
-    let per = |v: f64| if p.minutes > 0.0 { v * 90.0 / p.minutes } else { 0.0 };
-    [per(p.goals as f64), per(p.xg), per(p.xa), per(p.shots as f64), e.pass_pct, per(e.prog_passes as f64), per(e.def_actions as f64), per(p.vaep)]
+/// A player in Compare: from a built match, or a season line of the scouting index.
+#[derive(Clone)]
+enum CmpSrc {
+    Match(usize, library::PlayerMeta),
+    Scout(ScoutPlayerRow),
 }
 
-const RADAR_AXES: [&str; 8] = ["Goals", "xG", "xA", "Shots", "Pass %", "Prog. passes", "Def. actions", "VAEP"];
+fn role_text(r: Option<ScoutRole>) -> &'static str {
+    r.map(|r| r.label()).unwrap_or("–")
+}
 
-fn dual_radar(ui: &mut Ui, a: &library::PlayerMeta, b: &library::PlayerMeta, ca: Color32, cb: Color32) {
+/// Radar axes: (name on the radar, metric in the scouting index).
+const RADAR: [(&str, &str); 8] = [("Goals", "Goals"), ("xG", "xG"), ("xA", "Inferred xA"), ("Shots", "Shots"), ("Pass %", "Completion"), ("Prog. actions", "Progressive actions"), ("Def. actions", "Defensive actions"), ("VAEP", "VAEP")];
+
+/// Match totals of a match player, aligned with `METRICS` (what the match summary carries; the rest is 0).
+fn match_totals(p: &library::PlayerMeta) -> Vec<f64> {
+    let e = p.extra.clone().unwrap_or_default();
+    METRICS
+        .iter()
+        .map(|(l, _)| match *l {
+            "Goals" => p.goals as f64,
+            "Shots" => p.shots as f64,
+            "xG" => p.xg,
+            "Inferred xA" => p.xa,
+            "xGChain" => e.xgchain,
+            "Box entries" => e.box_entries as f64,
+            "Final-third receptions" => e.ft_receptions as f64,
+            "Touches" => p.touches as f64,
+            "Passes" => e.passes as f64,
+            "Completion" => e.pass_pct,
+            "Progressive actions" => e.prog_passes as f64,
+            "Line-breaking passes" => e.line_breaks as f64,
+            "Positive xT" => e.positive_xt,
+            "Take-ons won" => e.take_ons_won as f64,
+            "Recoveries" => e.recoveries as f64,
+            "Aerials won" => e.aerials_won as f64,
+            "Defensive actions" => e.def_actions as f64,
+            "VAEP" => p.vaep,
+            _ => 0.0,
+        })
+        .collect()
+}
+
+/// One side of a comparison in season units (per 90 for counts), whatever its source.
+struct CmpP {
+    short: String,
+    role_text: String,
+    role: ScoutRole,
+    vals: Vec<f64>,
+}
+
+impl CmpP {
+    fn new(s: &CmpSrc) -> CmpP {
+        match s {
+            CmpSrc::Scout(r) => CmpP { short: r.short.clone(), role_text: role_text(r.role).to_string(), role: r.role.unwrap_or(ScoutRole::CM), vals: r.m.iter().map(|v| *v as f64).collect() },
+            CmpSrc::Match(_, p) => {
+                let role = match p.role.as_str() {
+                    "Goalkeeper" => ScoutRole::GK,
+                    "Defender" => ScoutRole::CB,
+                    "Forward" => ScoutRole::FW,
+                    _ => ScoutRole::CM,
+                };
+                let totals = match_totals(p);
+                let vals = totals.iter().enumerate().map(|(i, v)| season_unit(i, *v, p.minutes)).collect();
+                CmpP { short: p.short.clone(), role_text: p.role.clone(), role, vals }
+            }
+        }
+    }
+    fn axis_values(&self) -> [f64; 8] {
+        std::array::from_fn(|i| metric_index(RADAR[i].1).map(|k| self.vals[k]).unwrap_or(0.0))
+    }
+    /// Role percentile of every radar axis against the season pool, as 0..1.
+    fn fractions(&self, ix: &ScoutIndex) -> [f64; 8] {
+        let v = self.axis_values();
+        std::array::from_fn(|i| percentile(v[i], &ix.role_values(self.role, RADAR[i].1, ix.pool_minutes, 20)) / 100.0)
+    }
+}
+
+fn dual_radar(ui: &mut Ui, names: [&str; 2], fa: [f64; 8], fb: [f64; 8], ca: Color32, cb: Color32) {
     use std::f32::consts::{FRAC_PI_2, TAU};
-    let (pa, pb) = (profile(a), profile(b));
-    // max per axis so both players share one scale; pass completion is a fixed 0..1 ratio
-    let max: Vec<f64> = (0..8).map(|i| if i == 4 { 1.0 } else { pa[i].max(pb[i]).max(1e-9) }).collect();
     let w = ui.available_width();
     let r = ((w * 0.5) - 84.0).clamp(60.0, 110.0);
     let (rect, _) = ui.allocate_exact_size(Vec2::new(w, 2.0 * (r + 44.0)), Sense::hover());
@@ -1085,26 +1267,42 @@ fn dual_radar(ui: &mut Ui, a: &library::PlayerMeta, b: &library::PlayerMeta, ca:
     for i in 0..8 {
         p.line_segment([c, point(r, i)], Stroke::new(1.0, DARK_LINE));
     }
-    for (prof, col) in [(pa, ca), (pb, cb)] {
-        let poly: Vec<egui::Pos2> = (0..8).map(|i| point(r * (prof[i] / max[i]).clamp(0.0, 1.0) as f32, i)).collect();
+    for (prof, col) in [(fa, ca), (fb, cb)] {
+        let poly: Vec<egui::Pos2> = (0..8).map(|i| point(r * prof[i].clamp(0.0, 1.0) as f32, i)).collect();
         p.add(egui::Shape::convex_polygon(poly.clone(), Color32::from_rgba_unmultiplied(col.r(), col.g(), col.b(), 60), Stroke::NONE));
-        p.add(egui::Shape::closed_line(poly, Stroke::new(2.0, col)));
+        p.add(egui::Shape::closed_line(poly, Stroke::new(2.4, col)));
     }
     // axis labels last, on a backing, so no spoke or polygon edge runs through them
     for i in 0..8 {
-        let g = p.layout_no_wrap(RADAR_AXES[i].to_string(), semi(11.0), DARK_TEXT2);
+        let g = p.layout_no_wrap(RADAR[i].0.to_string(), semi(11.0), DARK_TEXT2);
         let lr = egui::Align2::CENTER_CENTER.anchor_size(point(r + 26.0, i), g.size());
         p.rect_filled(lr.expand(2.0), 4.0, INK);
         p.galley(lr.min, g, DARK_TEXT2);
     }
     ui.horizontal_wrapped(|ui| {
-        for (p, col) in [(a, ca), (b, cb)] {
+        for (name, col) in [(names[0], ca), (names[1], cb)] {
             let (dot, _) = ui.allocate_exact_size(Vec2::splat(12.0), Sense::hover());
             ui.painter().circle_filled(dot.center(), 6.0, col);
-            ui.label(RichText::new(format!("{} · {}", p.short, p.role)).font(semi(12.0)).color(WHITE));
+            ui.label(RichText::new(name).font(semi(12.0)).color(WHITE));
             ui.add_space(12.0);
         }
     });
+}
+
+/// Rows of one comparison group from season figures: (label, left text, right text, left value, right value).
+fn group_rows_per90(a: &[f64], b: &[f64], g: usize) -> Vec<(&'static str, String, String, f64, f64)> {
+    let labels: &[&'static str] = match g {
+        0 => &["Goals", "xG", "Shots", "Box entries", "Final-third receptions"],
+        1 => &["Passes", "Completion", "Progressive actions", "Line-breaking passes", "Inferred xA", "xGChain"],
+        _ => &["Touches", "Take-ons won", "Positive xT", "Recoveries", "Aerials won", "VAEP"],
+    };
+    labels
+        .iter()
+        .map(|l| {
+            let k = metric_index(l).unwrap_or(0);
+            (*l, format_metric(l, a[k]), format_metric(l, b[k]), a[k], b[k])
+        })
+        .collect()
 }
 
 /// Rows of one comparison group: (label, left text, right text, left value, right value).

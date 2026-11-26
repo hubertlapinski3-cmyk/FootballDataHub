@@ -1,0 +1,94 @@
+name: ingest-leagues
+# Nightly ingestion for the seven covered leagues (Premier League, La Liga, Bundesliga, Serie A, Ligue 1,
+# Belgian Pro League, Ekstraklasa) on a SELF-HOSTED runner: WhoScored bot-walls GitHub's own runners.
+#
+# Register a runner with the labels `self-hosted` and `whoscored` (Settings > Actions > Runners) on a machine
+# with a normal home or office connection. It needs git, a Rust toolchain, Python 3.12 and ~2 GB free disk.
+#
+# Output goes to the orphan branch `data-catalog` (created on the first run):
+#   catalog.json, scout_index.json, matches/<league>/<id>.json.gz, rows/<league>/<id>.json
+# The app reads that branch over HTTPS with the read-only token set under Settings > Scrape relay.
+# Raw WhoScored files stay on the runner (work/raw) so a night's run only fetches what is new.
+#
+# Manual run: Actions > ingest-leagues > Run workflow (league, max_matches, backfill).
+on:
+  workflow_dispatch:
+    inputs:
+      league:
+        description: League slug (premier-league, la-liga, bundesliga, serie-a, ligue-1, pro-league, ekstraklasa) or all
+        default: all
+        required: true
+      max_matches:
+        description: Stop after this many newly fetched matches (0 = no limit)
+        default: "0"
+        required: true
+      backfill:
+        description: Also walk the monthly fixtures feed from the start of the season
+        type: boolean
+        default: false
+  schedule:
+    # 04:17 UTC: after the last late kick-offs of a matchday, before the next one
+    - cron: "17 4 * * *"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ingest-leagues
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: [self-hosted, whoscored]
+    timeout-minutes: 600
+    env:
+      DATA_BRANCH: data-catalog
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the script
+        run: python3 scripts/ingest_leagues.py --selftest
+      - name: Check out the data branch (or start it)
+        run: |
+          rm -rf work/data
+          if git ls-remote --exit-code --heads origin "$DATA_BRANCH" >/dev/null 2>&1; then
+            git clone --quiet --depth 1 --branch "$DATA_BRANCH" "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" work/data
+          else
+            mkdir -p work/data && git -C work/data init --quiet -b "$DATA_BRANCH"
+            git -C work/data remote add origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"
+          fi
+      - name: Install the scraper (pinned) and the browser
+        run: |
+          [ -d "$HOME/.cache/fat" ] || git clone --filter=blob:none --quiet https://github.com/ricardoherediaj/football-analytics-tutorials "$HOME/.cache/fat"
+          git -C "$HOME/.cache/fat" checkout --quiet 7ae865374d25eecbe46fe5331eed7bbdcaa16368
+          python3 -m venv "$HOME/.cache/ingest-venv"
+          "$HOME/.cache/ingest-venv/bin/pip" install --quiet "pandas>=2.3.3" "playwright>=1.40"
+          "$HOME/.cache/ingest-venv/bin/python" -m playwright install chromium
+      - name: Build matchhub
+        run: cargo build --release -p hub-core --bin matchhub
+      - name: Fetch new matches
+        env:
+          LEAGUE: ${{ inputs.league || 'all' }}
+          MAX: ${{ inputs.max_matches || '0' }}
+          BACKFILL: ${{ inputs.backfill && '--backfill' || '' }}
+        run: |
+          export PYTHONPATH="$HOME/.cache/fat/src"
+          "$HOME/.cache/ingest-venv/bin/python" scripts/ingest_leagues.py --out work/raw --league "$LEAGUE" --max-matches "$MAX" $BACKFILL
+      - name: Build packets, catalog and scouting index
+        env:
+          LEAGUE: ${{ inputs.league || 'all' }}
+          MAX: ${{ inputs.max_matches || '0' }}
+        run: |
+          args=(--raw work/raw --out work/data --cache .hub_cache --season 2026-27)
+          [ "$LEAGUE" != "all" ] && args+=(--league "$LEAGUE")
+          [ "$MAX" != "0" ] && args+=(--max-matches "$MAX")
+          target/release/matchhub ingest "${args[@]}"
+      - name: Publish to the data branch
+        run: |
+          cd work/data
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then echo "nothing new"; exit 0; fi
+          git commit --quiet -m "data: league ingest $(date -u +%F)"
+          for i in 1 2 3; do git pull --quiet --rebase origin "$DATA_BRANCH" 2>/dev/null; git push --quiet origin "HEAD:$DATA_BRANCH" && exit 0; sleep 5; done
+          exit 1

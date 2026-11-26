@@ -55,6 +55,42 @@ enum Cmd {
         #[arg(long, default_value = "main")]
         relay_branch: String,
     },
+    /// Nightly league ingestion: raw WhoScored files -> match packets, player rows, catalog and scouting index
+    Ingest {
+        /// folder of raw/<league>/<match_id>.json.gz (written by scripts/ingest_leagues.py)
+        #[arg(long, default_value = "work/raw")]
+        raw: PathBuf,
+        /// the data branch checkout the packets, rows, catalog.json and scout_index.json go to
+        #[arg(long, default_value = "work/data")]
+        out: PathBuf,
+        #[arg(long, default_value = ".hub_cache")]
+        cache: PathBuf,
+        #[arg(long, default_value = "2026-27")]
+        season: String,
+        /// one league slug (premier-league, la-liga, bundesliga, serie-a, ligue-1, pro-league, ekstraklasa); default all seven
+        #[arg(long)]
+        league: Option<String>,
+        /// stop after this many newly ingested matches
+        #[arg(long)]
+        max_matches: Option<usize>,
+        #[arg(long)]
+        offline: bool,
+        /// re-ingest matches that already have a packet
+        #[arg(long)]
+        force: bool,
+        /// minutes a player needs to enter the role percentile pools
+        #[arg(long, default_value_t = 270.0)]
+        pool_minutes: f32,
+    },
+    /// Rebuild catalog.json and scout_index.json from the row files of a data checkout
+    Catalog {
+        #[arg(long, default_value = "work/data")]
+        out: PathBuf,
+        #[arg(long, default_value = "2026-27")]
+        season: String,
+        #[arg(long, default_value_t = 270.0)]
+        pool_minutes: f32,
+    },
     /// Fill the competition store from every StatsBomb match of a season
     Season {
         #[arg(long)]
@@ -103,7 +139,7 @@ fn main() -> Result<()> {
                 None => embedded_models(),
             };
             let relay = relay.map(|repo| sources::whoscored::Relay { repo, branch: relay_branch, token: std::env::var("DATAHUB_RELAY_TOKEN").ok(), wait_secs: 480 });
-            let opts = BuildOptions { cache_dir: cache, online: !offline, overrides: theme_override, creator, store_path: Some(store), logo: None, relay, browser: None };
+            let opts = BuildOptions { cache_dir: cache, online: !offline, overrides: theme_override, creator, store_path: Some(store), logo: None, relay, browser: None, scout: None };
             let t0 = std::time::Instant::now();
             let o = build(&input, &opts, &models, &mut |s, f| eprintln!("[{:>3.0}%] {s}", f * 100.0))?;
             write_output(&o, &out, !no_png)?;
@@ -117,6 +153,28 @@ fn main() -> Result<()> {
             for d in &o.theme.decisions {
                 eprintln!("  theme: {d}");
             }
+        }
+        Cmd::Ingest { raw, out, cache, season, league, max_matches, offline, force, pool_minutes } => {
+            let league = match league {
+                Some(s) => Some(catalog::League::from_slug(&s).ok_or_else(|| anyhow::anyhow!("unknown league {s}"))?),
+                None => None,
+            };
+            let opts = ingest::IngestOptions { raw_dir: raw, out_dir: out.clone(), cache_dir: cache, season: season.clone(), league, max_matches, online: !offline, force, pool_minutes };
+            let rep = ingest::ingest(&opts, &mut |s| eprintln!("ingest {s}"))?;
+            eprintln!("ingested {} new, {} already done, {} failed", rep.processed, rep.skipped, rep.failed.len());
+            for (id, e) in &rep.failed {
+                eprintln!("  failed {id}: {e}");
+            }
+            let (c, i) = ingest::finalize(&out, &season, pool_minutes)?;
+            eprintln!("catalog: {} matches in {} leagues; scout index: {} players", c.total_matches(), c.leagues.iter().filter(|l| !l.matches.is_empty()).count(), i.players.len());
+            // a run that processed nothing and failed everything is a failure the workflow should show
+            if rep.processed == 0 && !rep.failed.is_empty() {
+                anyhow::bail!("every new match failed");
+            }
+        }
+        Cmd::Catalog { out, season, pool_minutes } => {
+            let (c, i) = ingest::finalize(&out, &season, pool_minutes)?;
+            eprintln!("catalog: {} matches; scout index: {} players", c.total_matches(), i.players.len());
         }
         Cmd::Season { sb_root, competition, season, store } => {
             let models = embedded_models();

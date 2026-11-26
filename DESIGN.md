@@ -99,6 +99,16 @@ Team colours on boards come from the match theme (club colours) and are data, no
 - `systemGestureExclusion` is not reachable from egui on NativeActivity; edge swipes go to the system.
 - Time-frame pill selectors (7D / 30D / 90D / ALL) do not apply: every board covers one match.
 
+## League scout
+
+- League pills: `chip`, one row that scrolls sideways (Saved, All 7, then the seven leagues). Search is a 48dp pill
+  in `ROOM_CARD_HI` (Darkroom) or `PRINT_CARD_HI` (Print).
+- Leaderboard: a sticky name column (name, club, role badge) beside figure columns that scroll sideways; rows are
+  56dp and grow with the text size; digits are tabular. Role percentile badges: `FIXER` fill from 75, `ROOM_CARD_HI` below.
+- Season card: the player card layout (hero, four key figures, percentile ring, average position); a forward is
+  measured on attacking output only. League players in Compare take the two accents (`SAGE`, `PRINT`) instead of
+  team colours.
+
 ## Polish checks and credit
 
 The UI went through a redline polish in the style of the unslop method (spacing, colour, icons, copy,

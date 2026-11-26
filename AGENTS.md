@@ -14,6 +14,11 @@ compiles to DEX.
 | `crates/hub-core/src/cancel.rs` | Process-wide cancel flag, checked between steps and by the cancellable fetch |
 | `crates/hub-core/tests/scrape.rs`, `tests/fixtures/` | Parser, link and HTTP tests against saved pages and a local server |
 | `crates/hub-app/android/dev/datahub/WebFetch.java` | Off-screen `WebView` helper, built to DEX by `scripts/build_webfetch_dex.sh` and loaded over JNI |
+| `crates/hub-core/src/catalog.rs` | League catalog and scouting index: `League`, `ScoutRole`, `METRICS`, `Catalog`, `ScoutIndex`, per-match rows, index builder (per-90, role percentiles), match packets, `CatalogStore` cache and `Remote` (raw.githubusercontent.com with a token) |
+| `crates/hub-core/src/ingest.rs`, `scripts/ingest_leagues.py`, `scripts/leagues.json` | Nightly ingest: raw WhoScored files -> packets, rows, `catalog.json`, `scout_index.json` (`matchhub ingest`); the Python step fetches raw files |
+| `.github/workflows/ingest-leagues.yml` | Nightly ingest on a self-hosted runner (WhoScored blocks GitHub's runners); publishes to the `data-catalog` branch |
+| `crates/hub-core/src/render/scout.rs` | Season player card of one scouting-index row (percentile ring by role, average position) |
+| `crates/hub-app/src/data.rs`, `screens/scout.rs` | Cached catalog and index, background refresh, league pills, catalog match cards, league scout leaderboard and season card |
 | `crates/hub-core/src/render/portrait.rs` | Reflows the 1600 px landscape boards into a 640 px phone column |
 | `crates/hub-core/data/reep_players.tsv.gz` | Trimmed Reep player register (CC0), rebuilt by `scripts/trim_reep.py` |
 | `crates/hub-app` | egui app: Android `NativeActivity` (`android_main` in `src/lib.rs`, built with `cargo apk`) and desktop (`src/main.rs`) from one codebase |
@@ -53,6 +58,26 @@ android-apk workflow) fills it. Without it the app says the built-in browser is 
 Rules for new sources: put parsing and messages in `scrape.rs` or `sources/`, never in the app crate;
 add a fixture under `crates/hub-core/tests/fixtures/` and a test in `tests/scrape.rs`; send the
 request through `net`, and never retry a 403 or 429.
+
+## League data (seven leagues)
+
+Premier League, La Liga, Bundesliga, Serie A, Ligue 1, Belgian Pro League and Ekstraklasa. The app never scrapes
+these and never bundles raw matches.
+
+1. `ingest-leagues.yml` runs on a self-hosted runner (labels `self-hosted`, `whoscored`), nightly and on demand
+   (`league`, `max_matches`, `backfill`). `scripts/ingest_leagues.py` saves raw WhoScored match data under
+   `work/raw/<league>/`; `matchhub ingest` turns it into packets (`matches/<league>/<id>.json.gz`, the parsed
+   `Match` with enrichment, about 70 KB), per-player rows (`rows/`), `catalog.json` and `scout_index.json`.
+2. Everything is pushed to the orphan branch `data-catalog` (not a release: a release holds at most 1000 assets,
+   a season has about 2700 matches). The repository is private: the app reads the branch over HTTPS with the
+   token of Settings > Scrape relay (`Remote`), so there is no separate key.
+3. The app caches both files under `<data>/catalog/`, refreshes them in the background when older than 6 hours,
+   and downloads one packet when a match is opened (`Source::Packet`), then builds its boards offline.
+   `library::set_scout` hands the index to every build: player cards rank against the season role pool.
+4. `scripts/leagues.json` holds the tournament pages. The last two entries are marked `verify`: check the
+   WhoScored URLs once before the first run. Discovery and fetching have not been run against the live site.
+5. Test fixture: `crates/hub-core/tests/fixtures/scout/` (synthetic clubs and players, one real packet). Regenerate
+   with `cargo test -p hub-core --test scout regenerate_fixture -- --ignored` after changing `METRICS`.
 
 ## Rules
 

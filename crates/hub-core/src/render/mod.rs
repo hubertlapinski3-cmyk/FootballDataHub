@@ -3,6 +3,7 @@ pub mod boards2;
 pub mod boards3;
 pub mod frame;
 pub mod pitch;
+pub mod scout;
 pub mod portrait;
 pub mod svg;
 

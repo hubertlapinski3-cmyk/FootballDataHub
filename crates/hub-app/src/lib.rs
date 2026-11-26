@@ -2,6 +2,7 @@
 //! One egui codebase for Android (NativeActivity via android-activity) and desktop.
 
 pub mod android_bridge;
+pub mod data;
 pub mod library;
 pub mod raster;
 pub mod scene;
@@ -22,13 +23,17 @@ pub enum Screen {
     Report(usize),
     Players(usize),
     Player { m: usize, id: u64 },
+    /// League scout: the cross-league player explorer (also a mode of Players)
+    Scout,
+    /// A player's season card from the scouting index
+    ScoutPlayer(u64),
     Compare,
     Settings,
 }
 
 impl Screen {
     pub fn dark(&self) -> bool {
-        matches!(self, Screen::Onboarding | Screen::Hub(_) | Screen::Viewer { .. } | Screen::Players(_) | Screen::Player { .. } | Screen::Compare)
+        matches!(self, Screen::Onboarding | Screen::Hub(_) | Screen::Viewer { .. } | Screen::Players(_) | Screen::Player { .. } | Screen::Scout | Screen::ScoutPlayer(_) | Screen::Compare)
     }
 }
 
@@ -130,6 +135,7 @@ pub struct App {
     pub toast: Option<(String, f64)>,
     pub viewer: ViewerState,
     pub compare: CompareState,
+    pub data: data::DataState,
     pub theme_text: String,
     pub crest_tex: std::collections::HashMap<String, egui::TextureHandle>,
     pub last_dark: Option<bool>,
@@ -170,6 +176,7 @@ impl App {
             let _ = std::fs::write(root.join("theme_overrides.toml"), DEFAULT_OVERRIDES);
         }
         let theme_text = std::fs::read_to_string(root.join("theme_overrides.toml")).unwrap_or_else(|_| DEFAULT_OVERRIDES.to_string());
+        let data = data::DataState::open(&root);
         App {
             raster: raster::Raster::new(ctx, 2),
             root,
@@ -181,6 +188,7 @@ impl App {
             toast: None,
             viewer: ViewerState::fresh(0.0),
             compare: CompareState { left: None, right: None, groups: [true; 4], swipe: 0.0, ran: false, players_mode: false, pl_left: None, pl_right: None },
+            data,
             theme_text,
             crest_tex: Default::default(),
             last_dark: None,
@@ -277,6 +285,7 @@ impl App {
         };
         style::set_force_dark(force);
         self.poll_system(&ctx);
+        self.poll_data(&ctx);
         style::set_text_scale(if self.prefs.text_scale == 0 { self.sys_text_scale } else { self.prefs.text_scale });
         self.exclusion = None;
         let dark = scr.dark() || force;
@@ -340,6 +349,8 @@ impl App {
                 Screen::Report(m) => self.report(&mut child, m),
                 Screen::Players(m) => self.players(&mut child, m),
                 Screen::Player { m, id } => self.player(&mut child, m, id),
+                Screen::Scout => self.scout_screen(&mut child),
+                Screen::ScoutPlayer(id) => self.scout_player(&mut child, id),
                 Screen::Compare => self.compare_screen(&mut child),
                 Screen::Settings => self.settings(&mut child),
             }

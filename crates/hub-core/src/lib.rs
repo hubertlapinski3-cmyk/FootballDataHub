@@ -2,8 +2,10 @@
 //! Platform-agnostic: used by the CLI and by the Android/desktop app.
 
 pub mod cancel;
+pub mod catalog;
 pub mod derive;
 pub mod fonts;
+pub mod ingest;
 pub mod ml;
 pub mod model;
 pub mod net;
@@ -35,6 +37,8 @@ pub enum Input {
     WhoScored(String),
     /// StatsBomb open-data root + match id.
     StatsBomb(PathBuf, u64),
+    /// A match packet from the league catalog (gzip JSON of the parsed `Match`): no scraping at all.
+    Packet(PathBuf),
 }
 
 #[derive(Debug, Clone)]
@@ -48,11 +52,13 @@ pub struct BuildOptions {
     pub relay: Option<sources::whoscored::Relay>,
     /// Browser-engine fallback for challenge pages (Android WebView); None on desktop.
     pub browser: Option<sources::whoscored::Browser>,
+    /// Season scouting index for season-long role percentiles on player cards; None ranks within the match.
+    pub scout: Option<std::sync::Arc<catalog::ScoutIndex>>,
 }
 
 impl Default for BuildOptions {
     fn default() -> Self {
-        BuildOptions { cache_dir: PathBuf::from(".hub_cache"), online: true, overrides: None, creator: "Data Hub".into(), store_path: None, logo: None, relay: None, browser: None }
+        BuildOptions { cache_dir: PathBuf::from(".hub_cache"), online: true, overrides: None, creator: "Data Hub".into(), store_path: None, logo: None, relay: None, browser: None, scout: None }
     }
 }
 
@@ -98,6 +104,7 @@ pub fn load_match(input: &Input, opts: &BuildOptions, progress: &mut dyn FnMut(&
     match input {
         Input::WhoScored(s) => sources::whoscored::load(s, &opts.cache_dir, if opts.online { opts.relay.as_ref() } else { None }, if opts.online { opts.browser.as_ref() } else { None }, progress),
         Input::StatsBomb(root, id) => sources::statsbomb::load(root, *id),
+        Input::Packet(p) => catalog::read_packet(p),
     }
 }
 
@@ -166,6 +173,7 @@ pub fn build(input: &Input, opts: &BuildOptions, models: &ml::Models, progress: 
         creator: opts.creator.clone(),
         logo: opts.logo.as_deref().and_then(render::crest_data_uri),
         footer_tag: "FULL VISUAL REDESIGN · REAL MATCH DATA".into(),
+        scout: opts.scout.as_deref(),
     };
     let boards = render::all_boards(&ctx, &all_rows);
     progress("report", 0.9);

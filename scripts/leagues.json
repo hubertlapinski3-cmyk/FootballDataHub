@@ -1,0 +1,12 @@
+{
+  "season": "2026-27",
+  "leagues": [
+    {"slug": "premier-league", "name": "Premier League",     "url": "https://www.whoscored.com/regions/252/tournaments/2/england-premier-league"},
+    {"slug": "la-liga",        "name": "La Liga",            "url": "https://www.whoscored.com/regions/206/tournaments/4/spain-laliga"},
+    {"slug": "bundesliga",     "name": "Bundesliga",         "url": "https://www.whoscored.com/regions/81/tournaments/3/germany-bundesliga"},
+    {"slug": "serie-a",        "name": "Serie A",            "url": "https://www.whoscored.com/regions/108/tournaments/5/italy-serie-a"},
+    {"slug": "ligue-1",        "name": "Ligue 1",            "url": "https://www.whoscored.com/regions/74/tournaments/22/france-ligue-1"},
+    {"slug": "pro-league",     "name": "Belgian Pro League", "url": "https://www.whoscored.com/regions/22/tournaments/18/belgium-jupiler-pro-league", "verify": true},
+    {"slug": "ekstraklasa",    "name": "Ekstraklasa",        "url": "https://www.whoscored.com/regions/176/tournaments/52/poland-ekstraklasa", "verify": true}
+  ]
+}

@@ -218,6 +218,24 @@ pub type Shared = Arc<Mutex<BuildState>>;
 pub enum Source {
     WhoScored(String),
     Sample,
+    /// A match of the league catalog: its packet is downloaded (when not cached) and built offline.
+    Packet(Box<PacketJob>),
+}
+
+pub struct PacketJob {
+    pub remote: matchhub::catalog::Remote,
+    pub entry: matchhub::catalog::CatalogMatch,
+}
+
+static SCOUT: std::sync::OnceLock<Mutex<Option<Arc<matchhub::catalog::ScoutIndex>>>> = std::sync::OnceLock::new();
+
+/// The season scouting index every build ranks its player cards against (None until one is cached).
+pub fn set_scout(ix: Option<Arc<matchhub::catalog::ScoutIndex>>) {
+    *SCOUT.get_or_init(Default::default).lock().unwrap() = ix;
+}
+
+fn current_scout() -> Option<Arc<matchhub::catalog::ScoutIndex>> {
+    SCOUT.get_or_init(Default::default).lock().unwrap().clone()
 }
 
 /// Write the bundled StatsBomb sample (Euro 2024 final) into the data dir.
@@ -248,9 +266,23 @@ pub fn ensure_sample(root: &Path) -> Result<PathBuf> {
 
 pub fn build_match(root: &Path, src: Source, online: bool, relay: Option<matchhub::sources::whoscored::Relay>, browser: Option<matchhub::sources::whoscored::Browser>, state: Shared) -> Result<String> {
     let models = matchhub::embedded_models();
+    let mut online = online;
     let input = match src {
         Source::WhoScored(s) => matchhub::Input::WhoScored(s),
         Source::Sample => matchhub::Input::StatsBomb(ensure_sample(root)?, 3943043),
+        Source::Packet(job) => {
+            {
+                let mut g = state.lock().unwrap();
+                g.step = "download".into();
+                g.detail = format!("{} v {}", job.entry.home, job.entry.away);
+                g.frac = 0.03;
+            }
+            let store = matchhub::catalog::CatalogStore::new(&root.join("catalog"));
+            let path = store.packet(&job.remote, &job.entry)?;
+            // the packet already carries what the nightly job fetched: build without any network
+            online = false;
+            matchhub::Input::Packet(path)
+        }
     };
     let overrides = root.join("theme_overrides.toml");
     let opts = matchhub::BuildOptions {
@@ -262,6 +294,7 @@ pub fn build_match(root: &Path, src: Source, online: bool, relay: Option<matchhu
         logo: None,
         relay,
         browser,
+        scout: current_scout(),
     };
     let st = state.clone();
     let mut progress = move |step: &str, f: f32| {
