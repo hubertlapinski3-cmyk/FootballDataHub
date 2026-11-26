@@ -386,7 +386,7 @@ pub fn progression_scatter(c: &Ctx) -> Board {
     s.line(px(mx), y0, px(mx), y0 + h, "#A3B3AA", 1.0, r#"stroke-dasharray="3 4""#);
     s.line(x0, py(my), x0 + w, py(my), "#A3B3AA", 1.0, r#"stroke-dasharray="3 4""#);
     s.t(x0 + w / 2.0, y0 + h + 48.0, "Progressive passes + explicit carries", 14.0, 600, theme::TEXT, Anchor::Middle);
-    s.t(x0 - 70.0, y0 + h / 2.0, "Inferred xA", 14.0, 600, theme::TEXT, Anchor::Middle);
+    s.t(x0, y0 - 26.0, "Inferred xA", 14.0, 600, theme::TEXT, Anchor::Start);
     // simple label repel: shift labels vertically when overlapping
     let mut placed: Vec<(f64, f64)> = vec![];
     for (i, p) in el.iter().enumerate() {
@@ -405,12 +405,17 @@ pub fn progression_scatter(c: &Ctx) -> Board {
             ly = if tries % 2 == 0 { y + 24.0 + 14.0 * (tries / 2) as f64 } else { y - 13.0 - 14.0 * ((tries + 1) / 2) as f64 };
             tries += 1;
         }
-        placed.push((x, ly));
-        s.t(x, ly, &p.short, 12.0, 600, theme::TEXT, Anchor::Middle);
+        // a label that still sits on another one is left off: the point keeps its tap tooltip with the name
+        let clash = placed.iter().any(|(ax, ay)| (ax - x).abs() < lw * 1.1 && (ay - ly).abs() < 17.0);
+        if !clash {
+            placed.push((x, ly));
+            s.t(x, ly, &p.short, 12.0, 600, theme::TEXT, Anchor::Middle);
+        }
     }
-    let mut lx = x0 + w - 360.0;
-    lx = legend_item(&mut s, lx, 195.0, "circle", c.col(Side::Home), &c.name(Side::Home));
-    legend_item(&mut s, lx, 195.0, "square", c.col(Side::Away), &c.name(Side::Away));
+    // legend sits under the axis title, clear of the points
+    let mut lx = x0;
+    lx = legend_item(&mut s, lx, y0 + h + 86.0, "circle", c.col(Side::Home), &c.short(Side::Home));
+    legend_item(&mut s, lx, y0 + h + 86.0, "square", c.col(Side::Away), &c.short(Side::Away));
     footer(&mut s, c, "Dotted lines: eligible-player medians. Inferred xA = shot xG credited to a prior successful key pass in the same possession (≤ 15 seconds).");
     Board::new("26_progression_scatter", "Progression and chance creation", s)
 }

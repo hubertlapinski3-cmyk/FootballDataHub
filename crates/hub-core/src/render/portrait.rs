@@ -204,6 +204,39 @@ fn cut(items: &[(usize, Box4)], rows: bool, stuck: u8) -> Node {
     cut(items, !rows, stuck + 1)
 }
 
+/// Splits items into a left and a right column when a clear vertical gap separates two groups that
+/// each hold several items. Returns None for single-column boards.
+fn column_split(items: &[(usize, Box4)]) -> Option<(Vec<(usize, Box4)>, Vec<(usize, Box4)>)> {
+    if items.len() < 6 {
+        return None;
+    }
+    let mut v = items.to_vec();
+    v.sort_by(|a, b| (a.1 .0 + a.1 .2).partial_cmp(&(b.1 .0 + b.1 .2)).unwrap());
+    // widest empty x-gap between consecutive item centres that is wide in board px
+    let mut best: Option<(f32, usize)> = None;
+    let mut run_max = f32::MIN;
+    for k in 0..v.len() - 1 {
+        run_max = run_max.max(v[k].1 .2);
+        let gap = v[k + 1].1 .0 - run_max;
+        if gap > 120.0 && best.map(|b| gap > b.0).unwrap_or(true) {
+            best = Some((gap, k + 1));
+        }
+    }
+    let (_, cut_at) = best?;
+    let (left, right): (Vec<_>, Vec<_>) = v.into_iter().enumerate().partition(|(i, _)| *i < cut_at);
+    let left: Vec<_> = left.into_iter().map(|(_, x)| x).collect();
+    let right: Vec<_> = right.into_iter().map(|(_, x)| x).collect();
+    // both columns must be substantial, and sit side by side rather than one above the other
+    let span = |g: &[(usize, Box4)]| g.iter().map(|x| x.1).reduce(union).unwrap();
+    let (a, b) = (span(&left), span(&right));
+    let overlap_y = a.3.min(b.3) - a.1.max(b.1);
+    if left.len() >= 2 && right.len() >= 2 && overlap_y > 0.3 * (a.3 - a.1).min(b.3 - b.1) {
+        Some((left, right))
+    } else {
+        None
+    }
+}
+
 struct Placed {
     prims: Vec<Prim>,
     /// (source box, ox, oy, sx, sy, tx, ty) per leaf, to move legend hit areas the same way
@@ -407,7 +440,25 @@ pub fn reflow(sc: &Scene) -> Option<Scene> {
 
     // ---- body
     let items: Vec<(usize, Box4)> = body.iter().map(|&i| (i, bbox1(&sc.prims[i]))).collect();
-    let root = cut(&items, true, 0);
+    // two side-by-side charts: keep each column whole, so rows of one chart are never interleaved with the other
+    // full-width notes and banners are kept out of the column search: their width would hide the gap
+    let (wide, narrow): (Vec<(usize, Box4)>, Vec<(usize, Box4)>) = items.iter().cloned().partition(|x| x.1 .2 - x.1 .0 > 700.0);
+    let mid_y = items.iter().map(|x| (x.1 .1 + x.1 .3) / 2.0).sum::<f32>() / items.len().max(1) as f32;
+    let (wide_top, wide_bottom): (Vec<_>, Vec<_>) = wide.into_iter().partition(|x| (x.1 .1 + x.1 .3) / 2.0 < mid_y);
+    let mut parts: Vec<Node> = vec![];
+    if !wide_top.is_empty() {
+        parts.push(cut(&wide_top, true, 0));
+    }
+    if !narrow.is_empty() {
+        parts.push(match column_split(&narrow) {
+            Some((l, r)) => Node::Cols(vec![cut(&l, true, 0), cut(&r, true, 0)]),
+            None => cut(&narrow, true, 0),
+        });
+    }
+    if !wide_bottom.is_empty() {
+        parts.push(cut(&wide_bottom, true, 0));
+    }
+    let root = if parts.len() == 1 { parts.pop().unwrap() } else { Node::Rows(parts) };
     let mut placed = Placed { prims: vec![], maps: vec![] };
     let body_h = place(&root, sc, head_h + 30.0, &mut placed);
     prims.extend(placed.prims);

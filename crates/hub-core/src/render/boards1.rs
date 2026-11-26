@@ -222,7 +222,7 @@ pub fn win_odds(c: &Ctx) -> Board {
         let ww = bw * p;
         s.rect(x, by, ww, bh, col, "");
         if ww > 90.0 {
-            let on = if theme::Rgb::hex(col).unwrap().luminance() > 0.45 { "#000" } else { "#fff" };
+            let on = if theme::Rgb::hex(col).unwrap().luminance() > 0.42 { "#0B1510" } else { "#F5F3EE" };
             s.t(x + ww / 2.0, by + bh / 2.0 - 4.0, lab, 17.0, 700, on, Anchor::Middle);
             s.t(x + ww / 2.0, by + bh / 2.0 + 18.0, &pct(*p), 17.0, 700, on, Anchor::Middle);
         }

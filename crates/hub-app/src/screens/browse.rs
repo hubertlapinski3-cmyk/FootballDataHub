@@ -315,7 +315,10 @@ impl App {
                 }
                 ui.add_space(6.0);
                 if !e.s.fallbacks.is_empty() {
-                    ui.label(RichText::new(format!("Note: {} source fallback(s): {}", e.s.fallbacks.len(), e.s.fallbacks[0])).font(body(12.0)).color(DARK_TEXT2));
+                    // one plain line here; the full fallback list lives in the Info sheet
+                    let n = e.s.fallbacks.len();
+                    let line = if n == 1 { "Using one fallback source; details in Info".to_string() } else { format!("Using {n} fallback sources; details in Info") };
+                    ui.label(RichText::new(line).font(body(12.0)).color(DARK_TEXT2));
                 }
                 let w = ui.available_width();
                 // two cards per row; one per row on compact widths or large text so titles stay readable
@@ -857,7 +860,9 @@ pub fn rich_paragraph(ui: &mut Ui, text: &str, home: &str, away: &str, hc: Color
     use egui::text::{LayoutJob, TextFormat};
     let mut job = LayoutJob::default();
     job.wrap.max_width = ui.available_width();
-    let base = TextFormat { font_id: body(size), color: INK, line_height: Some(size * 1.5), ..Default::default() };
+    // body prose follows the theme (Print ink on paper, Paper on Darkroom); numbers use the emerald accent
+    let base = TextFormat { font_id: body(size), color: fg(), line_height: Some(size * 1.5), ..Default::default() };
+    let num_col = if lt() { SAGE } else { PRIMARY_VARIANT };
     let mut rest = text;
     while !rest.is_empty() {
         let hit = [(home, hc), (away, ac)].iter().filter(|(n, _)| !n.is_empty()).filter_map(|(n, c)| rest.find(*n).map(|i| (i, *n, *c))).min_by_key(|x| x.0);
@@ -867,7 +872,7 @@ pub fn rich_paragraph(ui: &mut Ui, text: &str, home: &str, away: &str, hc: Color
         };
         for tok in seg.split_inclusive(' ') {
             let numeric = tok.chars().any(|c| c.is_ascii_digit());
-            let fmt = if numeric { TextFormat { font_id: bold(size), color: PRIMARY_VARIANT, ..base.clone() } } else { base.clone() };
+            let fmt = if numeric { TextFormat { font_id: bold(size), color: num_col, ..base.clone() } } else { base.clone() };
             job.append(tok, 0.0, fmt);
         }
         match team {

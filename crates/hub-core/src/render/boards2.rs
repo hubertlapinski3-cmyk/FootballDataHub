@@ -361,7 +361,7 @@ pub fn momentum(c: &Ctx) -> Board {
         let label = format!("{:.0}–{:.0}'", sp.start, sp.end);
         // 13 px type after the mobile boost is about 20 px: measure before placing
         if b - a - 2.0 > text_w(&label, 14.0, false) * 1.9 {
-            let on = if theme::Rgb::hex(dom).unwrap().luminance() > 0.45 { "#000" } else { "#fff" };
+            let on = if theme::Rgb::hex(dom).unwrap().luminance() > 0.42 { "#0B1510" } else { "#F5F3EE" };
             s.t((a + b) / 2.0, sy + 30.0, &label, 14.0, 800, on, Anchor::Middle);
         }
     }
@@ -401,7 +401,7 @@ pub fn game_state(c: &Ctx) -> Board {
         let w = r.minutes / total * bw;
         s.rect(x, by, w, 30.0, &cols[i], "");
         if w > 120.0 {
-            let on = if theme::Rgb::hex(&cols[i]).unwrap().luminance() > 0.45 { "#000" } else { "#fff" };
+            let on = if theme::Rgb::hex(&cols[i]).unwrap().luminance() > 0.42 { "#0B1510" } else { "#F5F3EE" };
             s.t(x + w / 2.0, by + 20.0, &r.label, 13.0, 800, on, Anchor::Middle);
         }
         x += w;
@@ -426,8 +426,8 @@ pub fn game_state(c: &Ctx) -> Board {
         s.rrect(cx, cy, cw, 560.0, 8.0, "#12211A", &cols[*i], 2.0);
         s.h(cx + 28.0, cy + 50.0, &r.label, 28.0, theme::TEXT, Anchor::Start);
         s.h(cx + cw - 28.0, cy + 50.0, &format!("{:.1} min", r.minutes), 24.0, theme::TEXT, Anchor::End);
-        s.t(cx + cw - 220.0, cy + 110.0, &c.name(Side::Home).to_uppercase(), 12.0, 800, c.col(Side::Home), Anchor::Middle);
-        s.t(cx + cw - 80.0, cy + 110.0, &c.name(Side::Away).to_uppercase(), 12.0, 800, c.col(Side::Away), Anchor::Middle);
+        s.t(cx + cw - 220.0, cy + 110.0, &c.short(Side::Home).to_uppercase(), 12.0, 800, c.col(Side::Home), Anchor::Middle);
+        s.t(cx + cw - 80.0, cy + 110.0, &c.short(Side::Away).to_uppercase(), 12.0, 800, c.col(Side::Away), Anchor::Middle);
         let per30 = |xg: f64| if r.minutes > 0.0 { xg / r.minutes * 30.0 } else { 0.0 };
         let lines = [
             ("Shots", r.shots[0].to_string(), r.shots[1].to_string()),

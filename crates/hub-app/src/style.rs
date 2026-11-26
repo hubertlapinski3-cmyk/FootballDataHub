@@ -336,10 +336,13 @@ pub fn tab_row(ui: &mut Ui, labels: &[&str], active: usize) -> Option<usize> {
     // scrollable tab row: never wider than the screen at large text sizes
     egui::ScrollArea::horizontal().auto_shrink([false, true]).id_salt(("tabs", labels.len())).show(ui, |ui| ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 22.0;
+        // at normal text size the tabs share the width evenly, so every label fits; larger text scrolls
+        let even = text_scale_pct() <= 125;
+        let cell = if even { ((ui.available_width() - 22.0 * (labels.len() as f32 - 1.0)) / labels.len() as f32).max(40.0) } else { 0.0 };
         for (i, l) in labels.iter().enumerate() {
             let on = i == active;
             let col = if on { PRINT } else { ROOM_MUTED };
-            let r = ui.add(egui::Button::new(RichText::new(*l).font(bold(15.0)).color(col)).fill(Color32::TRANSPARENT).stroke(Stroke::NONE).min_size(Vec2::new(0.0, 48.0)));
+            let r = ui.add(egui::Button::new(RichText::new(*l).font(bold(15.0)).color(col)).fill(Color32::TRANSPARENT).stroke(Stroke::NONE).min_size(Vec2::new(cell, 48.0)));
             if on {
                 let y = r.rect.bottom() - 4.0;
                 ui.painter().line_segment([egui::pos2(r.rect.left(), y), egui::pos2(r.rect.right(), y)], Stroke::new(3.0, SAGE));
